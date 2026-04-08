@@ -1,0 +1,49 @@
+services:
+  php:
+    build: .
+    ports:
+      - "8000:80"
+    volumes:
+      - ./backend/public:/var/www/html
+      - ./backend/src:/var/www/src
+    depends_on:
+      - mysql
+    environment:
+      DB_HOST: mysql
+      DB_NAME: cms
+      DB_USER: cms_user
+      DB_PASS: secret
+    networks:
+      - cms_network
+
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_DATABASE: cms
+      MYSQL_USER: cms_user
+      MYSQL_PASSWORD: secret
+      MYSQL_ROOT_PASSWORD: rootsecret
+    volumes:
+      - mysql_data:/var/lib/mysql
+    ports:
+      - "3306:3306"
+    networks:
+      - cms_network
+
+  phpmyadmin:
+    image: phpmyadmin:latest
+    ports:
+      - "8080:80"
+    environment:
+      PMA_HOST: mysql
+    depends_on:
+      - mysql
+    networks:
+      - cms_network
+
+networks:
+  cms_network:
+    driver: bridge
+
+volumes:
+  mysql_data:
