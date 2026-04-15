@@ -46,6 +46,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         $result = $stmt->get_result();
         echo json_encode($result->fetch_all(MYSQLI_ASSOC));
         $stmt->close();
+    } elseif ($url[0] === "auth") {
+
+        $data = json_decode(file_get_contents('php://input'), true);
+        $username = $data['username'] ?? '';
+        $password = $data['password'] ?? '';
+
+        if ($username === 'admin' && $password === 'password') {
+            // echo json_encode(['success' => true, 'message' => 'Authentication successful']);
+
+            $base64UrlEncode = function ($data) {
+                return rtrim(strtr(base64_encode($data), '+/', '-_'), '=');
+            };
+
+            $header = [
+                'alg' => 'HS256',
+                'typ' => 'JWT'
+            ];
+            $payload = [
+                'sub' => 'admin',
+                'iat' => time(),
+                'exp' => time() + (60 * 60) // Token is 1 hour geldig
+            ];
+            $secret = 'your_secret_key';
+            $headerEncoded = $base64UrlEncode(json_encode($header));
+            $payloadEncoded = $base64UrlEncode(json_encode($payload));
+            $signature = hash_hmac('sha256', "$headerEncoded.$payloadEncoded", $secret, true);
+            $signatureEncoded = $base64UrlEncode($signature);
+            $jwt = "$headerEncoded.$payloadEncoded.$signatureEncoded";
+            echo json_encode(['token' => $jwt]);
+
+        } else {
+            http_response_code(401);
+            echo json_encode(['success' => false, 'message' => 'Invalid credentials']);
+        }
+
     } else {
 
         //pakt alles als er niks wordt meegegeven in de url

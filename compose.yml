@@ -16,6 +16,22 @@ services:
     networks:
       - cms_network
 
+  frontend:
+    image: node:20-alpine
+    working_dir: /app
+    volumes:
+      - ./frontend:/app
+    ports:
+      - "5173:5173"
+    command: sh -c "npm install && npm run dev"
+    environment:
+      # Overrides the PHP target inside Docker (service name = php, port 80)
+      VITE_PHP_TARGET: http://php:80
+    depends_on:
+      - php
+    networks:
+      - cms_network
+
   mysql:
     image: mysql:8.0
     environment:
