@@ -1,4 +1,4 @@
-DirectoryIndex index1.php
+DirectoryIndex index.php
 RewriteEngine On
 RewriteCond %{REQUEST_FILENAME} !-f
-RewriteRule ^ index1.php [L]
+RewriteRule ^ index.php [L]
