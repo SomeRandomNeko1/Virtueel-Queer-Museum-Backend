@@ -67,6 +67,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         $tokenKey = $tokenParts[2];
         $key = 'thesixsevenkeyofatleast67bitslongpleaseicantgiveuaweakkeydamn';
 
+        //checken of de token nog geldig is
+        if (!is_array($decodedPayload) || !isset($decodedPayload['exp']) || !is_numeric($decodedPayload['exp']) || time() >= (int) $decodedPayload['exp']) {
+            http_response_code(401);
+            echo json_encode(['error' => 'token expired']);
+            exit;
+        }
+
         $signature = hash_hmac('sha256', "$tokenParts[0].$tokenParts[1]", $key, true);
         $signatureEncoded = rtrim(strtr(base64_encode($signature), '+/', '-_'), '=');
 
