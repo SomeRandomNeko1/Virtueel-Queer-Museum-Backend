@@ -1,8 +1,7 @@
-import { useState, useEffect, useCallback } from "react"
-import { FiHome, FiList, FiSettings, FiSearch, FiX, FiImage, FiChevronDown } from "react-icons/fi"
+import { useState, useEffect, useCallback, useRef } from "react"
+import { FiHome, FiList, FiSettings, FiSearch, FiX, FiImage, FiChevronDown, FiLogOut, FiUser } from "react-icons/fi"
 import NotifBell from "./NotifBell"
 import "./App.css"
-
 const API = "/api"
 
 const navItems = [
@@ -11,7 +10,7 @@ const navItems = [
   { id: "settings", label: "Instellingen", Icon: FiSettings },
 ]
 
-export default function App() {
+export default function App({ onLogout }) {
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
 
   useEffect(() => {
@@ -27,6 +26,20 @@ export default function App() {
   const [typeFilter, setTypeFilter] = useState(null)
   const [page, setPage] = useState("home")
   const [picked, setPicked] = useState(null)
+  const [showMenu, setShowMenu] = useState(false)
+  const menuRef = useRef(null)
+
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (menuRef.current && !menuRef.current.contains(e.target)) {
+        setShowMenu(false)
+      }
+    }
+    if (showMenu) {
+      document.addEventListener("mousedown", handleClickOutside)
+    }
+    return () => document.removeEventListener("mousedown", handleClickOutside)
+  }, [showMenu])
 
   const load = useCallback(async () => {
     setLoading(true); setErr(null)
@@ -112,11 +125,61 @@ export default function App() {
 
             <NotifBell />
 
-            <div className="flex items-center gap-1.5 border border-border rounded-[20px] py-1 pr-2.25 pl-1 cursor-pointer text-muted text-[13px] hover:bg-warm-bg transition-colors duration-120">
-              <div className="w-6.5 h-6.5 bg-ink text-white rounded-full text-[11px] font-medium flex items-center justify-center font-display">
-                O
-              </div>
-              <FiChevronDown size={12} />
+            <div className="relative" ref={menuRef}>
+              <button
+                onClick={() => setShowMenu(p => !p)}
+                className="flex items-center gap-1.5 border border-border rounded-[20px] py-1 pr-2.25 pl-1 cursor-pointer text-muted text-[13px] hover:bg-warm-bg transition-colors duration-120 bg-transparent"
+              >
+                <div className="w-6.5 h-6.5 bg-ink text-white rounded-full text-[11px] font-medium flex items-center justify-center font-display">
+                  O
+                </div>
+                <FiChevronDown
+                  size={12}
+                  style={{
+                    transform: showMenu ? "rotate(180deg)" : "rotate(0deg)",
+                    transition: "transform 150ms ease",
+                  }}
+                />
+              </button>
+
+              {showMenu && (
+                <div
+                  className="absolute right-0 top-[calc(100%+8px)] w-48 bg-paper border border-border rounded-lg shadow-[0_8px_30px_rgba(0,0,0,.12)] overflow-hidden z-50"
+                  style={{ animation: "menuFadeIn 120ms ease" }}
+                >
+                  <div className="px-3.5 py-3 border-b border-border">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 bg-ink text-white rounded-full text-[12px] font-medium flex items-center justify-center font-display shrink-0">
+                        O
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-display text-[13px] font-semibold text-ink leading-tight truncate">Admin</p>
+                        <p className="font-body text-[11px] text-muted truncate">Beheerder</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Menu items */}
+                  <div className="p-1">
+                    <button
+                      className="flex items-center gap-2.5 w-full px-3 py-2 rounded-md bg-transparent border-none cursor-pointer font-body text-[13px] text-muted hover:bg-warm-bg hover:text-ink transition-colors duration-120 text-left"
+                    >
+                      <FiUser size={13} />
+                      <span>Profiel</span>
+                    </button>
+
+                    <div className="my-1 border-t border-border" />
+
+                    <button
+                      onClick={() => { setShowMenu(false); onLogout?.() }}
+                      className="flex items-center gap-2.5 w-full px-3 py-2 rounded-md bg-transparent border-none cursor-pointer font-body text-[13px] text-red-500 hover:bg-red-50 transition-colors duration-120 text-left"
+                    >
+                      <FiLogOut size={13} />
+                      <span>Uitloggen</span>
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </header>
@@ -159,6 +222,13 @@ export default function App() {
           ))}
         </nav>
       )}
+
+      <style>{`
+        @keyframes menuFadeIn {
+          from { opacity: 0; transform: translateY(-4px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
     </div>
   )
 }
