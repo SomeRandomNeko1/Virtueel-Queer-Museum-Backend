@@ -56,7 +56,7 @@ export default function Login({ onLogin }) {
           </p>
 
           <h1 className="font-display text-[26px] font-semibold text-ink mb-1 tracking-[.005em]">
-            Welkom teerug
+            Welkom terug
           </h1>
           <p className="font-body text-[13px] font-light text-muted mb-8">
             Log in met je account om door te gaan.
@@ -84,13 +84,13 @@ export default function Login({ onLogin }) {
             <div className="flex flex-col gap-1.5">
               <div className="flex items-center justify-between">
                 <label className="font-body text-[11.5px] font-medium text-accent tracking-wider uppercase">
-                  Wachtword
+                  Wachtwoord
                 </label>
                 <button
                   type="button"
                   className="font-body text-[11.5px] text-muted hover:text-ink transition-colors duration-120 bg-transparent border-none cursor-pointer p-0"
                 >
-                  Wachtword vergeten?
+                  Wachtwoord vergeten?
                 </button>
               </div>
               <div className="relative">
