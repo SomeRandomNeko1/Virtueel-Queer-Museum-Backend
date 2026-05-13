@@ -1,8 +1,10 @@
 import { useState } from "react"
 import { FiEye, FiEyeOff, FiAlertCircle } from "react-icons/fi"
 
-export default function Login({ onLogin }) {
-  const [email, setEmail]       = useState("")
+const API = "/api"
+
+export default function Login({ onLogin, addLog }) {
+  const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
   const [showPw, setShowPw]     = useState(false)
   const [error, setError]       = useState(null)
@@ -12,19 +14,31 @@ export default function Login({ onLogin }) {
     e.preventDefault()
     setError(null)
 
-    if (!email || !password) {
+    if (!username || !password) {
       setError("Vul je gebruikersnaam en wachtwoord in.")
       return
     }
 
     setLoading(true)
     try {
-      await new Promise(r => setTimeout(r, 400))
-      if (email !== "Admin" || password !== "Kaas101") {
-        throw new Error("Onjuiste gebruikersnaam of wachtwoord.")
+      const res = await fetch(API + "/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password }),
+      })
+
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        throw new Error(data.error || "Inloggen mislukt.")
       }
-      onLogin()
+
+      if (!data.token) {
+        throw new Error("Backend gaf geen token terug.")
+      }
+
+      onLogin(data.token)
     } catch (err) {
+      addLog?.(`Inloggen mislukt: ${err.message}`, "error")
       setError(err.message)
     } finally {
       setLoading(false)
@@ -70,8 +84,8 @@ export default function Login({ onLogin }) {
               </label>
               <input
                 type="text"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
+                value={username}
+                onChange={e => setUsername(e.target.value)}
                 placeholder="Jouw gebruikersnaam"
                 autoComplete="username"
                 className="bg-paper border border-border rounded-md px-3.5 py-2.5

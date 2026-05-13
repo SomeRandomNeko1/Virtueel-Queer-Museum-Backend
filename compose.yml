@@ -6,13 +6,18 @@ services:
     volumes:
       - ./backend/public:/var/www/html
       - ./backend/src:/var/www/src
+      - ./backend/uploads.ini:/usr/local/etc/php/conf.d/uploads.ini:ro
     depends_on:
       - mysql
     environment:
       DB_HOST: mysql
       DB_NAME: cms
       DB_USER: cms_user
-      DB_PASS: secret
+      DB_PASS: ${DB_PASS:-change-me-db-password}
+      DB_ROOTPASS: ${DB_ROOTPASS:-change-me-root-password}
+      APP_AUTH_USERNAME: ${APP_AUTH_USERNAME:-admin}
+      APP_AUTH_PASSWORD: ${APP_AUTH_PASSWORD:-change-me-admin-password}
+      APP_JWT_SECRET: ${APP_JWT_SECRET:-change-me-jwt-secret}
     networks:
       - cms_network
 
@@ -37,8 +42,8 @@ services:
     environment:
       MYSQL_DATABASE: cms
       MYSQL_USER: cms_user
-      MYSQL_PASSWORD: secret
-      MYSQL_ROOT_PASSWORD: rootsecret
+      MYSQL_PASSWORD: ${DB_PASS:-change-me-db-password}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOTPASS:-change-me-root-password}
     volumes:
       - mysql_data:/var/lib/mysql
     ports:

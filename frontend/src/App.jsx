@@ -11,7 +11,7 @@ const navItems = [
   { id: "settings", label: "Instellingen", Icon: FiSettings },
 ]
 
-export default function App({ onLogout }) {
+export default function App({ token, onLogout, logs, addLog }) {
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
 
   useEffect(() => {
@@ -45,12 +45,20 @@ export default function App({ onLogout }) {
   const load = useCallback(async () => {
     setLoading(true); setErr(null)
     try {
-      const res = await fetch(API + "/")
+      const res = await fetch(API + "/", {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      })
+      if (res.status === 401) {
+        onLogout?.()
+        throw new Error("Sessie verlopen. Log opnieuw in.")
+      }
       if (!res.ok) throw new Error("server error " + res.status)
       setItems(await res.json())
     } catch (e) { setErr(e.message) }
     setLoading(false)
-  }, [])
+  }, [token, onLogout])
 
   useEffect(() => { load() }, [load])
 
@@ -192,12 +200,8 @@ export default function App({ onLogout }) {
               picked={picked} setPicked={setPicked} isMobile={isMobile}
             />
           )}
-          {page === "upload" && <UploadView />}
-          {page === "log" && (
-            <div className="flex items-center justify-center mt-20 text-muted text-[14px] italic">
-              <p>Log nog niet beschikbaar</p>
-            </div>
-          )}
+          {page === "upload" && <UploadView token={token} addLog={addLog} />}
+          {page === "log" && <LogView logs={logs} />}
           {page === "settings" && (
             <div className="flex items-center justify-center mt-20 text-muted text-[14px] italic">
               <p>Instellingen nog niet beschikbaar</p>
@@ -256,10 +260,11 @@ const FRAMES = [
   { id: 6, wallId: "right", label: "Rechterwand – achter" },
 ]
 
-function UploadView() {
+function UploadView({ token, addLog }) {
   const fileRef = useRef(null)
 
   const [naam,         setNaam]         = useState("")
+  const [type,         setType]         = useState("Schilderij")
   const [beschrijving, setBeschrijving] = useState("")
   const [frameId,      setFrameId]      = useState(null)
   const [frameStyle,   setFrameStyle]   = useState("black")
@@ -267,9 +272,11 @@ function UploadView() {
   const [file,         setFile]         = useState(null)
   const [dragOver,     setDragOver]     = useState(false)
   const [submitted,    setSubmitted]    = useState(false)
+  const [submitError,  setSubmitError]  = useState(null)
+  const [submitting,   setSubmitting]   = useState(false)
 
   const selectedFrame = FRAMES.find(f => f.id === frameId)
-  const canSubmit     = naam && file && frameId
+  const canSubmit     = naam && type && file && frameId
 
   const readFile = (f) => {
     if (!f) return
@@ -280,22 +287,49 @@ function UploadView() {
   }
 
   const handleReset = () => {
-    setNaam(""); setBeschrijving(""); setFrameId(null)
+    setNaam(""); setType("Schilderij"); setBeschrijving(""); setFrameId(null)
     setFrameStyle("black"); setPreview(null); setFile(null)
-    setSubmitted(false)
+    setSubmitted(false); setSubmitError(null)
   }
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!canSubmit) return
-    // TODO: POST FormData naar /api/upload
-    // const data = new FormData()
-    // data.append("naam", naam)
-    // data.append("beschrijving", beschrijving)
-    // data.append("frameId", frameId)
-    // data.append("frameStyle", frameStyle)
-    // data.append("afbeelding", file)
-    // await fetch("/api/upload", { method: "POST", body: data })
-    setSubmitted(true)
+
+    setSubmitError(null)
+    setSubmitting(true)
+    try {
+      const data = new FormData()
+      data.append("naam", naam)
+      data.append("Type", type)
+      data.append("beschrijving", beschrijving)
+      data.append("frameId", String(frameId))
+      data.append("frameStyle", frameStyle)
+      data.append("afbeelding", file)
+
+      const res = await fetch(API + "/upload", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        body: data,
+      })
+
+      const payload = await res.json().catch(() => ({}))
+      if (res.status === 401) {
+        throw new Error("Sessie verlopen. Log opnieuw in.")
+      }
+      if (!res.ok) {
+        throw new Error(payload.error || "Opslaan mislukt.")
+      }
+
+      addLog?.(`Afbeelding toegevoegd: ${naam}`, "success")
+      setSubmitted(true)
+    } catch (error) {
+      addLog?.(`Upload mislukt: ${error.message || "Opslaan mislukt."}`, "error")
+      setSubmitError(error.message || "Opslaan mislukt.")
+    } finally {
+      setSubmitting(false)
+    }
   }
   if (submitted) {
     return (
@@ -347,7 +381,7 @@ function UploadView() {
             <div className="flex flex-col items-center gap-2 py-9">
               <FiImage size={28} color="#ccc" />
               <p className="font-body text-[13px] text-muted">Klik of sleep een afbeelding</p>
-              <p className="font-body text-[11px] text-muted">PNG · JPG · WEBP — max. 10 MB</p>
+              <p className="font-body text-[11px] text-muted">PNG · JPG · WEBP — max. 50 MB</p>
             </div>
           )}
         </div>
@@ -363,12 +397,36 @@ function UploadView() {
             <FiX size={11} /> Verwijderen
           </button>
         )}
+
+        {submitError && (
+          <p className="mt-2 font-body text-[12px] text-red-600">{submitError}</p>
+        )}
       </div>
 
       <div className="bg-paper border border-border rounded-[10px] p-5 flex flex-col gap-3">
         <p className="font-body text-[10px] font-semibold text-accent tracking-[.07em] uppercase">
           Informatie
         </p>
+        <div className="flex flex-col gap-1.5">
+          <label className="font-body text-[11px] font-medium text-accent tracking-wider uppercase">
+            Type
+          </label>
+          <input
+            value={type}
+            onChange={e => setType(e.target.value)}
+            list="art-types"
+            placeholder="Bijv. Schilderij"
+            className="border border-border rounded-md px-3.5 py-2.5 font-body text-[13px] text-ink placeholder:text-muted placeholder:font-light outline-none transition-all duration-150 focus:border-ink focus:shadow-[0_0_0_3px_rgba(17,17,17,.06)]"
+          />
+          <datalist id="art-types">
+            <option value="Schilderij" />
+            <option value="Beeldhouwwerk" />
+            <option value="Fotografie" />
+            <option value="Illustratie" />
+            <option value="Installatie" />
+            <option value="Overig" />
+          </datalist>
+        </div>
         <div className="flex flex-col gap-1.5">
           <label className="font-body text-[11px] font-medium text-accent tracking-wider uppercase">Naam</label>
           <input
@@ -449,15 +507,70 @@ function UploadView() {
         </button>
         <button
           onClick={handleSubmit}
-          disabled={!canSubmit}
+          disabled={!canSubmit || submitting}
           className="flex-1 py-2.5 rounded-md bg-ink text-white font-body text-[13px] font-medium border-none cursor-pointer transition-colors duration-150 hover:bg-accent disabled:opacity-40 disabled:cursor-not-allowed"
         >
-          {canSubmit ? "Opslaan" : "Vul alle verplichte velden in"}
+          {submitting
+            ? "Opslaan..."
+            : canSubmit
+              ? "Opslaan"
+              : "Vul alle verplichte velden in"
+          }
         </button>
       </div>
 
     </div>
   )
+}
+
+function LogView({ logs }) {
+  if (!logs || logs.length === 0) {
+    return (
+      <div className="flex items-center justify-center mt-20 text-muted text-[14px] italic">
+        <p>Nog geen activiteit</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="max-w-170">
+      <div className="bg-paper border border-border rounded-[10px] overflow-hidden">
+        <div className="px-5 py-4 border-b border-border">
+          <p className="font-display text-[16px] font-semibold text-ink">Activiteitenlogboek</p>
+          <p className="font-body text-[12px] text-muted mt-1">Recente inlog- en uploadacties</p>
+        </div>
+
+        <div className="divide-y divide-border">
+          {logs.map(entry => (
+            <div key={entry.id} className="px-5 py-4 flex items-start gap-3">
+              <div className={`mt-1 w-2.5 h-2.5 rounded-full shrink-0 ${
+                entry.status === "success"
+                  ? "bg-green-500"
+                  : entry.status === "error"
+                    ? "bg-red-500"
+                    : "bg-slate-400"
+              }`} />
+              <div className="min-w-0 flex-1">
+                <p className="font-body text-[13px] text-ink">{entry.message}</p>
+                <p className="font-body text-[11px] text-muted mt-1">{formatLogTime(entry.at)}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function formatLogTime(isoString) {
+  try {
+    return new Intl.DateTimeFormat("nl-NL", {
+      dateStyle: "short",
+      timeStyle: "short",
+    }).format(new Date(isoString))
+  } catch {
+    return isoString
+  }
 }
 
 function IFramePanel({ picked }) {
@@ -541,6 +654,8 @@ function HomeView({ items, loading, err, types, typeFilter, setTypeFilter, picke
 }
 
 function Card({ item, active, onClick }) {
+  const imageSrc = item.ImageUrl || item.Afbeelding || ""
+
   return (
     <div
       onClick={onClick}
@@ -550,9 +665,9 @@ function Card({ item, active, onClick }) {
         ${active ? "shadow-[0_0_0_2px_#111111]" : ""}`}
     >
       <div className="h-30 bg-warm-bg flex items-center justify-center overflow-hidden relative">
-        {item.Afbeelding
+        {imageSrc
           ? <img
-              src={item.Afbeelding}
+              src={imageSrc}
               alt={item.Naam}
               className="w-full h-full object-cover transition-transform duration-350 ease-in-out group-hover:scale-[1.04]"
             />
