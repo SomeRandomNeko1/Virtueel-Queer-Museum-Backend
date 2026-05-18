@@ -1,0 +1,69 @@
+services:
+  php:
+    build: .
+    ports:
+      - "8000:80"
+    volumes:
+      - ./backend/public:/var/www/html
+      - ./backend/src:/var/www/src
+      - ./backend/uploads.ini:/usr/local/etc/php/conf.d/uploads.ini:ro
+    depends_on:
+      - mysql
+    environment:
+      DB_HOST: mysql
+      DB_NAME: cms
+      DB_USER: cms_user
+      DB_PASS: ${DB_PASS:-change-me-db-password}
+      DB_ROOTPASS: ${DB_ROOTPASS:-change-me-root-password}
+      APP_AUTH_USERNAME: ${APP_AUTH_USERNAME:-admin}
+      APP_AUTH_PASSWORD: ${APP_AUTH_PASSWORD:-change-me-admin-password}
+      APP_JWT_SECRET: ${APP_JWT_SECRET:-change-me-jwt-secret}
+    networks:
+      - cms_network
+
+  frontend:
+    image: cms-frontend:latest 
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules       
+    ports:
+      - "5173:5173"
+    command: npx vite --host    
+    environment:
+      VITE_PHP_TARGET: http://php:80
+    depends_on:
+      - php
+    networks:
+      - cms_network
+
+
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_DATABASE: cms
+      MYSQL_USER: cms_user
+      MYSQL_PASSWORD: ${DB_PASS:-change-me-db-password}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOTPASS:-change-me-root-password}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    ports:
+      - "3307:3306"
+    networks:
+      - cms_network
+  phpmyadmin:
+    image: phpmyadmin:latest
+    ports:
+      - "8080:80"
+    environment:
+      PMA_HOST: mysql
+    depends_on:
+      - mysql
+    networks:
+      - cms_network
+
+networks:
+  cms_network:
+    driver: bridge
+
+volumes:
+  mysql_data:
