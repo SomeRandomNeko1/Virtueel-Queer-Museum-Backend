@@ -1,14 +1,13 @@
 import { useState } from "react"
 import { FiEye, FiEyeOff, FiAlertCircle } from "react-icons/fi"
-
-const API = "/api"
+import { login } from "./api"
 
 export default function Login({ onLogin, addLog }) {
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
-  const [showPw, setShowPw]     = useState(false)
-  const [error, setError]       = useState(null)
-  const [loading, setLoading]   = useState(false)
+  const [showPw, setShowPw] = useState(false)
+  const [error, setError] = useState(null)
+  const [loading, setLoading] = useState(false)
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -21,22 +20,10 @@ export default function Login({ onLogin, addLog }) {
 
     setLoading(true)
     try {
-      const res = await fetch(API + "/auth", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
-      })
-
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok) {
-        throw new Error(data.error || "Inloggen mislukt.")
-      }
-
-      if (!data.token) {
-        throw new Error("Backend gaf geen token terug.")
-      }
-
-      onLogin(data.token)
+      const token = await login(username, password)
+      localStorage.setItem("cms_token", token)
+      onLogin(token)
+      addLog?.(`Succesvol ingelogd als ${username}`, "success")
     } catch (err) {
       addLog?.(`Inloggen mislukt: ${err.message}`, "error")
       setError(err.message)
