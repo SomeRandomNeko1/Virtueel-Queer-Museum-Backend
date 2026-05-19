@@ -1,6 +1,6 @@
 services:
   php:
-    build: .
+    build: cms-php:latest
     ports:
       - "8000:80"
     volumes:
@@ -50,6 +50,7 @@ services:
       - "3307:3306"
     networks:
       - cms_network
+
   phpmyadmin:
     image: phpmyadmin:latest
     ports:

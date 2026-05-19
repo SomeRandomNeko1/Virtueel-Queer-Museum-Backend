@@ -1,14 +1,15 @@
 <?php
+
+// --- CORS & Headers ---
 header('Access-Control-Allow-Origin: http://10.120.5.132:5173');
 header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With');
 header('Access-Control-Allow-Credentials: true');
-
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 header('Pragma: no-cache');
 
-// Belangrijk: Het OPTIONS (preflight) verzoek moet direct akkoord krijgen met de headers hierboven
+// Handle preflight OPTIONS request
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(204);
     exit;
@@ -16,23 +17,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 require_once dirname(__DIR__) . "/src/config.php";
 
-function readJsonBody(): array
-{
+function readJsonBody(): array {
     $raw = file_get_contents('php://input');
-    if (!$raw) {
-        return [];
-    }
+    if (!$raw) return [];
     $decoded = json_decode($raw, true);
     return is_array($decoded) ? $decoded : [];
 }
 
-function base64UrlEncode(string $data): string
-{
+function base64UrlEncode(string $data): string {
     return rtrim(strtr(base64_encode($data), '+/', '-_'), '=');
 }
 
-function base64UrlDecode(string $data): string|false
-{
+function base64UrlDecode(string $data): string|false {
     $remainder = strlen($data) % 4;
     if ($remainder !== 0) {
         $data .= str_repeat('=', 4 - $remainder);
@@ -40,8 +36,7 @@ function base64UrlDecode(string $data): string|false
     return base64_decode(strtr($data, '-_', '+/'), true);
 }
 
-function getBearerToken(): string
-{
+function getBearerToken(): string {
     $authHeader = '';
     if (function_exists('getallheaders')) {
         $headers = getallheaders();
@@ -56,8 +51,7 @@ function getBearerToken(): string
     return '';
 }
 
-function uploadDebug(string $message, array $context = []): void
-{
+function uploadDebug(string $message, array $context = []): void {
     global $APP_DEBUG_UPLOADS;
     $line = '[upload-debug] ' . $message;
     if (!empty($context)) {
@@ -72,13 +66,11 @@ function uploadDebug(string $message, array $context = []): void
     error_log($line);
 }
 
-function getUploadStorageDir(): string
-{
+function getUploadStorageDir(): string {
     return sys_get_temp_dir() . '/virtueel-queer-museum-uploads';
 }
 
-function serveUploadedImage(string $fileName): void
-{
+function serveUploadedImage(string $fileName): void {
     if (!preg_match('/^[a-f0-9]{32}\.(jpg|jpeg|png|webp)$/i', $fileName)) {
         http_response_code(404);
         echo json_encode(['error' => 'not found']);
@@ -91,36 +83,67 @@ function serveUploadedImage(string $fileName): void
         exit;
     }
     $mimeMap = [
-        'jpg'  => 'image/jpeg',
-        'jpeg' => 'image/jpeg',
-        'png'  => 'image/png',
-        'webp' => 'image/webp',
+        'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg',
+        'png' => 'image/png', 'webp' => 'image/webp',
     ];
-    $extension = strtolower(pathinfo($fileName, PATHINFO_EXTENSION));
-    header('Content-Type: ' . ($mimeMap[$extension] ?? 'application/octet-stream'));
+    $ext = strtolower(pathinfo($fileName, PATHINFO_EXTENSION));
+    header('Content-Type: ' . ($mimeMap[$ext] ?? 'application/octet-stream'));
     header('Content-Length: ' . filesize($filePath));
     readfile($filePath);
     exit;
 }
 
+// --- Routing ---
 $path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 $url = explode('/', trim($path, '/'));
 $route = $url[0] ?? '';
+$method = $_SERVER['REQUEST_METHOD'];
 
-if ($route === 'uploads' && ($UPLOADS_PUBLIC ?? '1') === '1') {
-    serveUploadedImage($url[1] ?? '');
+// Serve uploaded files (public or private)
+if ($route === 'uploads') {
+    $isPublic = ($UPLOADS_PUBLIC ?? '1') === '1';
+    if ($isPublic) {
+        serveUploadedImage($url[1] ?? '');
+    } else {
+        // Private: require valid token first (see auth block below)
+    }
 }
 
-if ($route === "auth") {
-    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-        http_response_code(405);
-        echo json_encode(['error' => 'method not allowed']);
+// GET /api/kamers - Lijst van alle kamers
+if ($route === 'kamers' && $method === 'GET') {
+    require_once dirname(__DIR__) . "/src/connection.php";
+    $stmt = $conn->prepare("SELECT `KamerId`, `Naam` FROM `Kamers` ORDER BY `KamerId`");
+    $stmt->execute();
+    $result = $stmt->get_result();
+    echo json_encode($result->fetch_all(MYSQLI_ASSOC));
+    $stmt->close();
+    exit;
+}
+
+if ($route === 'frameplaatsen' && $method === 'GET') {
+    require_once dirname(__DIR__) . "/src/connection.php";
+    $kamerIdFilter = (int)($_GET['kamerId'] ?? 0);
+    if ($kamerIdFilter <= 0) {
+        http_response_code(400);
+        echo json_encode(['error' => 'kamerId query parameter is verplicht']);
         exit;
     }
+    $stmt = $conn->prepare("SELECT `FramePlaatsId`, `PlaatsNr` FROM `FramePlaatsen` WHERE `KamerId` = ? ORDER BY `PlaatsNr`");
+    $stmt->bind_param("i", $kamerIdFilter);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    echo json_encode($result->fetch_all(MYSQLI_ASSOC));
+    $stmt->close();
+    exit;
+}
+
+
+if ($route === 'auth' && $method === 'POST') {
     $data = readJsonBody();
     $username = $data['username'] ?? '';
     $password = $data['password'] ?? '';
     $authenticated = false;
+
     if (!empty($AUTH_PASSWORD_HASH)) {
         if (hash_equals($AUTH_USERNAME, $username) && password_verify($password, $AUTH_PASSWORD_HASH)) {
             $authenticated = true;
@@ -130,355 +153,284 @@ if ($route === "auth") {
             $authenticated = true;
         }
     }
+
     if ($authenticated) {
         $header = ['alg' => 'HS256', 'typ' => 'JWT'];
-        $payload = [
-            'sub' => $AUTH_USERNAME,
-            'iat' => time(),
-            'exp' => time() + (60 * 60)
-        ];
-        $headerEncoded = base64UrlEncode(json_encode($header, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
-        $payloadEncoded = base64UrlEncode(json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
-        $signature = hash_hmac('sha256', "$headerEncoded.$payloadEncoded", $JWT_SECRET, true);
-        $signatureEncoded = base64UrlEncode($signature);
-        $jwt = "$headerEncoded.$payloadEncoded.$signatureEncoded";
-        echo json_encode(['token' => $jwt]);
+        $payload = ['sub' => $AUTH_USERNAME, 'iat' => time(), 'exp' => time() + 3600];
+        $headerEnc = base64UrlEncode(json_encode($header, JSON_UNESCAPED_SLASHES));
+        $payloadEnc = base64UrlEncode(json_encode($payload, JSON_UNESCAPED_SLASHES));
+        $signature = hash_hmac('sha256', "$headerEnc.$payloadEnc", $JWT_SECRET, true);
+        $signatureEnc = base64UrlEncode($signature);
+        echo json_encode(['token' => "$headerEnc.$payloadEnc.$signatureEnc"]);
         exit;
     }
     http_response_code(401);
-    echo json_encode(['error' => 'Invalid credentials']);
+    echo json_encode(['error' => 'Ongeldige inloggegevens']);
     exit;
 }
 
-$method = $_SERVER['REQUEST_METHOD'];
+$protectedRoutes = ['upload'];
+$isProtected = in_array($route, $protectedRoutes, true) || ($route === 'uploads' && ($UPLOADS_PUBLIC ?? '1') === '0');
 
-// Allow POST only for upload, GET for everything else
-if ($method !== 'GET' && !($method === 'POST' && $route === 'upload')) {
-    http_response_code(405);
-    echo json_encode(['error' => 'method not allowed']);
-    exit;
+if ($isProtected) {
+    $token = getBearerToken();
+    $parts = explode(".", $token);
+    if (count($parts) !== 3) {
+        http_response_code(401);
+        echo json_encode(['error' => 'Authenticatie vereist']);
+        exit;
+    }
+
+    $decodedHeader = json_decode(base64UrlDecode($parts[0]) ?: '', true);
+    $decodedPayload = json_decode(base64UrlDecode($parts[1]) ?: '', true);
+
+    if (!is_array($decodedHeader) || ($decodedHeader['alg'] ?? '') !== 'HS256'
+        || !is_array($decodedPayload) || ($decodedPayload['sub'] ?? '') !== $AUTH_USERNAME
+        || !isset($decodedPayload['exp']) || !is_numeric($decodedPayload['exp'])
+        || time() >= (int) $decodedPayload['exp']) {
+        http_response_code(401);
+        echo json_encode(['error' => 'Token verlopen of ongeldig']);
+        exit;
+    }
+
+    $signature = hash_hmac('sha256', "$parts[0].$parts[1]", $JWT_SECRET, true);
+    if (!hash_equals(base64UrlEncode($signature), $parts[2])) {
+        http_response_code(401);
+        echo json_encode(['error' => 'Token signature invalid']);
+        exit;
+    }
+
+    // Private uploads: serve only after auth
+    if ($route === 'uploads' && ($UPLOADS_PUBLIC ?? '1') === '0') {
+        serveUploadedImage($url[1] ?? '');
+    }
 }
 
-$token = getBearerToken();
-$tokenParts = explode(".", $token);
-if (count($tokenParts) !== 3) {
-    http_response_code(401);
-    echo json_encode(['error' => 'no token']);
-    exit;
-}
 
-$decodedHeader = json_decode(base64UrlDecode($tokenParts[0]) ?: '', true);
-$decodedPayload = json_decode(base64UrlDecode($tokenParts[1]) ?: '', true);
-$tokenKey = $tokenParts[2];
+// POST /api/upload - Nieuw kunstwerk toevoegen
+if ($route === 'upload') {
+    if ($method !== 'POST') {
+        http_response_code(405);
+        echo json_encode(['error' => 'Alleen POST toegestaan']);
+        exit;
+    }
 
-if (!is_array($decodedHeader) || ($decodedHeader['alg'] ?? '') !== 'HS256'
-    || !is_array($decodedPayload) || ($decodedPayload['sub'] ?? '') !== $AUTH_USERNAME
-    || !isset($decodedPayload['exp']) || !is_numeric($decodedPayload['exp'])
-    || time() >= (int) $decodedPayload['exp']) {
-    http_response_code(401);
-    echo json_encode(['error' => 'token expired']);
-    exit;
-}
+    require_once dirname(__DIR__) . "/src/connection.php";
 
-$signature = hash_hmac('sha256', "$tokenParts[0].$tokenParts[1]", $JWT_SECRET, true);
-$signatureEncoded = base64UrlEncode($signature);
-if (!hash_equals($signatureEncoded, $tokenKey)) {
-    http_response_code(401);
-    echo json_encode(['error' => 'no token']);
+    uploadDebug('upload request', [
+        'postMaxSize' => ini_get('post_max_size'),
+        'uploadMaxFilesize' => ini_get('upload_max_filesize'),
+        'files' => array_keys($_FILES ?? [])
+    ]);
+
+    // --- Lees POST velden (case-insensitive) ---
+    $naam           = trim((string) ($_POST['naam'] ?? $_POST['Naam'] ?? ''));
+    $type           = trim((string) ($_POST['type'] ?? $_POST['Type'] ?? 'Overig'));
+    $beschrijving   = trim((string) ($_POST['beschrijving'] ?? $_POST['Beschrijving'] ?? ''));
+    $auteur         = trim((string) ($_POST['auteur'] ?? $_POST['Auteur'] ?? ''));
+    $framePlaatsRaw = trim((string) ($_POST['frameplaatsid'] ?? $_POST['FramePlaatsId'] ?? ''));
+    $positieRaw     = trim((string) ($_POST['position'] ?? $_POST['Position'] ?? '0'));
+    $imageUrl       = trim((string) ($_POST['imageurl'] ?? $_POST['ImageUrl'] ?? ''));
+    $audioPath      = trim((string) ($_POST['audiopath'] ?? $_POST['AudioFilePath'] ?? $_POST['audioFilePath'] ?? ''));
+
+    // --- Validatie ---
+    if ($naam === '' || mb_strlen($naam) > 255) {
+        http_response_code(400);
+        echo json_encode(['error' => 'Naam is verplicht (max 255 karakters)']);
+        exit;
+    }
+    if ($type === '' || mb_strlen($type) > 80 || !preg_match('/^[\p{L}\p{N} .,\'&-]{1,80}$/u', $type)) {
+        http_response_code(400);
+        echo json_encode(['error' => 'Ongeldig type']);
+        exit;
+    }
+    if (mb_strlen($beschrijving ?? '') > 5000) {
+        http_response_code(400);
+        echo json_encode(['error' => 'Beschrijving te lang (max 5000)']);
+        exit;
+    }
+    if (mb_strlen($auteur ?? '') > 255) {
+        http_response_code(400);
+        echo json_encode(['error' => 'Auteur te lang']);
+        exit;
+    }
+    if (!ctype_digit($framePlaatsRaw) || (int)$framePlaatsRaw <= 0) {
+        http_response_code(400);
+        echo json_encode(['error' => 'FramePlaatsId is verplicht en moet een positief getal zijn']);
+        exit;
+    }
+    $framePlaatsId = (int)$framePlaatsRaw;
+    $position = ctype_digit($positieRaw) ? (int)$positieRaw : 0;
+    if ($position < 0) {
+        http_response_code(400);
+        echo json_encode(['error' => 'Positie kan niet negatief zijn']);
+        exit;
+    }
+
+    // --- Afbeelding verwerken ---
+    $finalImageUrl = '';
+    $uploadedImageTmp = null;
+    $hasImageFile = isset($_FILES['afbeelding']) && $_FILES['afbeelding']['error'] === UPLOAD_ERR_OK;
+
+    if ($hasImageFile) {
+        $file = $_FILES['afbeelding'];
+        if ($file['size'] <= 0 || $file['size'] > 50 * 1024 * 1024) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Afbeelding moet tussen 1 byte en 50MB zijn']);
+            exit;
+        }
+        $finfo = new finfo(FILEINFO_MIME_TYPE);
+        $mime = $finfo->file($file['tmp_name']);
+        $allowed = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp'];
+        if (!isset($allowed[$mime]) || !@getimagesize($file['tmp_name'])) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Alleen JPG, PNG of WEBP afbeeldingen toegestaan']);
+            exit;
+        }
+        $uploadDir = getUploadStorageDir();
+        if (!is_dir($uploadDir) && !mkdir($uploadDir, 0775, true)) {
+            http_response_code(500);
+            echo json_encode(['error' => 'Uploadmap niet aan te maken']);
+            exit;
+        }
+        $safeName = bin2hex(random_bytes(16)) . '.' . $allowed[$mime];
+        $targetPath = $uploadDir . '/' . $safeName;
+        if (!move_uploaded_file($file['tmp_name'], $targetPath)) {
+            http_response_code(500);
+            echo json_encode(['error' => 'Kon afbeelding niet opslaan']);
+            exit;
+        }
+        $finalImageUrl = '/api/uploads/' . $safeName;
+        $uploadedImageTmp = $targetPath;
+    } elseif ($imageUrl !== '') {
+        if (!filter_var($imageUrl, FILTER_VALIDATE_URL) || mb_strlen($imageUrl) > 500) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Ongeldige ImageUrl']);
+            exit;
+        }
+        $finalImageUrl = $imageUrl;
+    } else {
+        http_response_code(400);
+        echo json_encode(['error' => 'Afbeelding of ImageUrl is verplicht']);
+        exit;
+    }
+
+    // --- Audio verwerken (optioneel) ---
+    $finalAudioPath = '';
+    $uploadedAudioTmp = null;
+    $hasAudioFile = isset($_FILES['audio']) && $_FILES['audio']['error'] === UPLOAD_ERR_OK;
+
+    if ($hasAudioFile) {
+        $file = $_FILES['audio'];
+        if ($file['size'] <= 0 || $file['size'] > 50 * 1024 * 1024) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Audio moet tussen 1 byte en 50MB zijn']);
+            exit;
+        }
+        $finfo = new finfo(FILEINFO_MIME_TYPE);
+        $mime = $finfo->file($file['tmp_name']);
+        $allowed = [
+            'audio/mpeg' => 'mp3', 'audio/ogg' => 'ogg',
+            'audio/wav' => 'wav', 'audio/mp4' => 'm4a', 'audio/x-m4a' => 'm4a'
+        ];
+        if (!isset($allowed[$mime])) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Alleen MP3, OGG, WAV of M4A audio toegestaan']);
+            exit;
+        }
+        $uploadDir = getUploadStorageDir();
+        if (!is_dir($uploadDir) && !mkdir($uploadDir, 0775, true)) {
+            http_response_code(500);
+            echo json_encode(['error' => 'Uploadmap niet aan te maken']);
+            exit;
+        }
+        $safeName = bin2hex(random_bytes(16)) . '.' . $allowed[$mime];
+        $targetPath = $uploadDir . '/' . $safeName;
+        if (!move_uploaded_file($file['tmp_name'], $targetPath)) {
+            @unlink($uploadedImageTmp);
+            http_response_code(500);
+            echo json_encode(['error' => 'Kon audio niet opslaan']);
+            exit;
+        }
+        $finalAudioPath = '/api/uploads/' . $safeName;
+        $uploadedAudioTmp = $targetPath;
+    } elseif ($audioPath !== '') {
+        if (!filter_var($audioPath, FILTER_VALIDATE_URL) && !preg_match('#^/[a-zA-Z0-9_/.-]+$#', $audioPath)) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Ongeldig audio pad']);
+            exit;
+        }
+        if (mb_strlen($audioPath) > 500) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Audio pad te lang']);
+            exit;
+        }
+        $finalAudioPath = $audioPath;
+    }
+    // Audio is optioneel: leeg laten mag
+
+    // Tabel Kunstwerken: Id, Type, Naam, Beschrijving, FramePlaatsId, ImageUrl, AudioFilePath, Auteur, Position, Frameless
+    $stmt = $conn->prepare("INSERT INTO `Kunstwerken` (`Type`, `Naam`, `Beschrijving`, `FramePlaatsId`, `ImageUrl`, `AudioFilePath`, `Auteur`, `Position`, `Frameless`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+    if (!$stmt) {
+        uploadDebug('prepare failed', ['error' => $conn->error]);
+        @unlink($uploadedImageTmp);
+        @unlink($uploadedAudioTmp);
+        http_response_code(500);
+        echo json_encode(['error' => 'Database fout (prepare)']);
+        exit;
+    }
+
+    $frameless = 0; // Default: met frame. Pas aan als je dit via POST wilt laten sturen.
+    $stmt->bind_param("sssisssii", $type, $naam, $beschrijving, $framePlaatsId, $finalImageUrl, $finalAudioPath, $auteur, $position, $frameless);
+    
+    if (!$stmt->execute()) {
+        uploadDebug('insert failed', ['error' => $stmt->error]);
+        @unlink($uploadedImageTmp);
+        @unlink($uploadedAudioTmp);
+        $stmt->close();
+        http_response_code(500);
+        echo json_encode(['error' => 'Database fout (insert)']);
+        exit;
+    }
+
+    $newId = $stmt->insert_id;
+    $stmt->close();
+
+    http_response_code(201);
+    echo json_encode([
+        'id' => $newId,
+        'Type' => $type,
+        'Naam' => $naam,
+        'Beschrijving' => $beschrijving,
+        'FramePlaatsId' => $framePlaatsId,
+        'ImageUrl' => $finalImageUrl,
+        'AudioFilePath' => $finalAudioPath,
+        'Auteur' => $auteur,
+        'Position' => $position,
+        'Frameless' => $frameless,
+    ]);
     exit;
 }
 
 require_once dirname(__DIR__) . "/src/connection.php";
 
-// If uploads are marked private, allow serving them only after token validation
-if ($route === 'uploads' && ($UPLOADS_PUBLIC ?? '1') === '0') {
-    serveUploadedImage($url[1] ?? '');
-}
-
-// --- NIEUW: Route voor kamers ---
-if ($route === 'kamers') {
-    $stmt = $conn->prepare("SELECT `Id`, `Naam` FROM `Kamers` ORDER BY `Id`");
-    $stmt->execute();
-    $result = $stmt->get_result();
-    echo json_encode($result->fetch_all(MYSQLI_ASSOC));
-    $stmt->close();
-    exit;
-}
-
-// --- Upload route (aangepast) ---
-if ($route === 'upload') {
-    uploadDebug('request received', [
-        'method' => $method,
-        'contentLength' => $_SERVER['CONTENT_LENGTH'] ?? null,
-        'postMaxSize' => ini_get('post_max_size'),
-        'uploadMaxFilesize' => ini_get('upload_max_filesize'),
-        'memoryLimit' => ini_get('memory_limit'),
-    ]);
-
-    if ($method !== 'POST') {
-        http_response_code(405);
-        echo json_encode(['error' => 'method not allowed']);
-        exit;
-    }
-
-    // -------------------- Lees velden uit POST --------------------
-    $naam         = trim((string) ($_POST['naam'] ?? $_POST['Naam'] ?? ''));
-    $type         = trim((string) ($_POST['Type'] ?? $_POST['type'] ?? ''));
-    $beschrijving = trim((string) ($_POST['beschrijving'] ?? $_POST['Beschrijving'] ?? ''));
-    $auteur       = trim((string) ($_POST['auteur'] ?? $_POST['Auteur'] ?? ''));
-    $kamerIdRaw   = (string) ($_POST['kamerId'] ?? $_POST['KamerId'] ?? '');
-    $positieRaw   = (string) ($_POST['position'] ?? $_POST['Position'] ?? '');  // Position in kamer
-    $imageUrl     = trim((string) ($_POST['imageUrl'] ?? $_POST['ImageUrl'] ?? ''));
-    $audioPath    = trim((string) ($_POST['audioFilePath'] ?? $_POST['AudioFilePath'] ?? ''));
-
-    // -------------------- Validatie --------------------
-    if ($naam === '') {
-        http_response_code(400);
-        echo json_encode(['error' => 'naam is verplicht']);
-        exit;
-    }
-    if ($type === '') {
-        $type = 'Overig';
-    }
-    if (mb_strlen($naam) > 255) {
-        http_response_code(400);
-        echo json_encode(['error' => 'naam is te lang']);
-        exit;
-    }
-    if (mb_strlen($type) > 80 || !preg_match('/^[\p{L}\p{N} .,\'&-]{1,80}$/u', $type)) {
-        http_response_code(400);
-        echo json_encode(['error' => 'ongeldig type']);
-        exit;
-    }
-    if (mb_strlen($beschrijving) > 5000) {
-        http_response_code(400);
-        echo json_encode(['error' => 'beschrijving is te lang']);
-        exit;
-    }
-    if (mb_strlen($auteur) > 255) {
-        http_response_code(400);
-        echo json_encode(['error' => 'auteur is te lang']);
-        exit;
-    }
-    if (mb_strlen($audioPath) > 500) {
-        http_response_code(400);
-        echo json_encode(['error' => 'audiobestand pad is te lang']);
-        exit;
-    }
-
-    // KamerId: optioneel? In DB is het een FK, verplicht.
-    if (!ctype_digit($kamerIdRaw) || (int)$kamerIdRaw <= 0) {
-        http_response_code(400);
-        echo json_encode(['error' => 'ongeldige KamerId']);
-        exit;
-    }
-    $kamerId = (int)$kamerIdRaw;
-
-    // Position: optioneel, default 0 of 1?
-    $position = 0;
-    if ($positieRaw !== '') {
-        if (!ctype_digit($positieRaw) || (int)$positieRaw < 0) {
-            http_response_code(400);
-            echo json_encode(['error' => 'ongeldige positie']);
-            exit;
-        }
-        $position = (int)$positieRaw;
-    }
-
-    // -------------------- Afbeelding verwerken --------------------
-    $finalImageUrl = '';
-    $hasImageFile = isset($_FILES['afbeelding']) && $_FILES['afbeelding']['error'] === UPLOAD_ERR_OK;
-
-    if ($hasImageFile) {
-        // Bestand verwerken (zelfde logica als eerder)
-        $file = $_FILES['afbeelding'];
-        $maxBytes = 50 * 1024 * 1024;
-        if ($file['size'] <= 0 || $file['size'] > $maxBytes) {
-            http_response_code(400);
-            echo json_encode(['error' => 'bestand moet tussen 1 byte en 50 MB zijn']);
-            exit;
-        }
-
-        $finfo = new finfo(FILEINFO_MIME_TYPE);
-        $mimeType = $finfo->file($file['tmp_name']);
-        $allowedMimes = [
-            'image/jpeg' => 'jpg',
-            'image/png' => 'png',
-            'image/webp' => 'webp',
-        ];
-        if (!isset($allowedMimes[$mimeType])) {
-            http_response_code(400);
-            echo json_encode(['error' => 'alleen JPG, PNG en WEBP zijn toegestaan']);
-            exit;
-        }
-
-        $sizeInfo = @getimagesize($file['tmp_name']);
-        if ($sizeInfo === false || !in_array($sizeInfo['mime'] ?? '', array_keys($allowedMimes), true)) {
-            http_response_code(400);
-            echo json_encode(['error' => 'ongeldig afbeeldingsbestand']);
-            exit;
-        }
-
-        $uploadDir = getUploadStorageDir();
-        if (!is_dir($uploadDir) && !mkdir($uploadDir, 0775, true)) {
-            http_response_code(500);
-            echo json_encode(['error' => 'kon uploadmap niet maken']);
-            exit;
-        }
-
-        $safeFileName = bin2hex(random_bytes(16)) . '.' . $allowedMimes[$mimeType];
-        $targetPath = $uploadDir . '/' . $safeFileName;
-
-        if (!move_uploaded_file($file['tmp_name'], $targetPath)) {
-            http_response_code(500);
-            echo json_encode(['error' => 'kon bestand niet opslaan']);
-            exit;
-        }
-
-        $finalImageUrl = '/api/uploads/' . $safeFileName;
-    } elseif ($imageUrl !== '') {
-        // Als er een URL is meegegeven, valideer deze eenvoudig
-        if (!filter_var($imageUrl, FILTER_VALIDATE_URL)) {
-            http_response_code(400);
-            echo json_encode(['error' => 'ongeldige ImageUrl']);
-            exit;
-        }
-        if (mb_strlen($imageUrl) > 500) {
-            http_response_code(400);
-            echo json_encode(['error' => 'ImageUrl is te lang']);
-            exit;
-        }
-        $finalImageUrl = $imageUrl;
-    } else {
-        // Verplicht afbeelding of URL
-        http_response_code(400);
-        echo json_encode(['error' => 'afbeelding of ImageUrl is verplicht']);
-        exit;
-    }
-
-    // -------------------- Audiobestand verwerken --------------------
-    $finalAudioPath = '';
-    $hasAudioFile = isset($_FILES['audio']) && $_FILES['audio']['error'] === UPLOAD_ERR_OK;
-
-    if ($hasAudioFile) {
-        $audioFile = $_FILES['audio'];
-        $maxBytes = 50 * 1024 * 1024;
-        if ($audioFile['size'] <= 0 || $audioFile['size'] > $maxBytes) {
-            http_response_code(400);
-            echo json_encode(['error' => 'audiobestand moet tussen 1 byte en 50 MB zijn']);
-            exit;
-        }
-
-        $finfo = new finfo(FILEINFO_MIME_TYPE);
-        $mimeType = $finfo->file($audioFile['tmp_name']);
-        // Sta veelgebruikte audioformaten toe (aanpassen naar wens)
-        $allowedAudioMimes = [
-            'audio/mpeg' => 'mp3',
-            'audio/ogg' => 'ogg',
-            'audio/wav' => 'wav',
-            'audio/mp4' => 'm4a',
-            'audio/x-m4a' => 'm4a',
-        ];
-        if (!isset($allowedAudioMimes[$mimeType])) {
-            http_response_code(400);
-            echo json_encode(['error' => 'ongeldig audiobestand (mp3, ogg, wav, m4a)']);
-            exit;
-        }
-
-        $uploadDir = getUploadStorageDir();
-        if (!is_dir($uploadDir) && !mkdir($uploadDir, 0775, true)) {
-            http_response_code(500);
-            echo json_encode(['error' => 'kon uploadmap niet maken']);
-            exit;
-        }
-
-        $safeAudioName = bin2hex(random_bytes(16)) . '.' . $allowedAudioMimes[$mimeType];
-        $targetAudioPath = $uploadDir . '/' . $safeAudioName;
-
-        if (!move_uploaded_file($audioFile['tmp_name'], $targetAudioPath)) {
-            http_response_code(500);
-            echo json_encode(['error' => 'kon audiobestand niet opslaan']);
-            exit;
-        }
-
-        $finalAudioPath = '/api/uploads/' . $safeAudioName;
-    } elseif ($audioPath !== '') {
-        // Gebruik het opgegeven pad (bijv. externe URL of lokaal pad)
-        if (!filter_var($audioPath, FILTER_VALIDATE_URL) && !preg_match('#^/[a-zA-Z0-9_/.-]+$#', $audioPath)) {
-            http_response_code(400);
-            echo json_encode(['error' => 'ongeldig audiobestand pad']);
-            exit;
-        }
-        $finalAudioPath = $audioPath;
-    }
-    // Audio is optioneel, dus leeg laten is oké
-
-    // -------------------- Database insert --------------------
-    // Let op: de tabel `Kunstwerken` heeft kolommen: Id, Type, Naam, Beschrijving, KamerId, FrameNummer, Frameless, ImageUrl, AudioFilePath, Auteur, Position
-    // Wij gebruiken: Type, Naam, Beschrijving, KamerId, ImageUrl, AudioFilePath, Auteur, Position
-    // FrameNummer en Frameless laten we voor nu op NULL/0, of pas aan als nodig.
-    $stmt = $conn->prepare("INSERT INTO `Kunstwerken` (`Type`, `Naam`, `Beschrijving`, `KamerId`, `ImageUrl`, `AudioFilePath`, `Auteur`, `Position`) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
-    if (!$stmt) {
-        uploadDebug('database prepare failed', ['dbError' => $conn->error]);
-        if ($hasImageFile) @unlink($targetPath);
-        if ($hasAudioFile) @unlink($targetAudioPath);
-        http_response_code(500);
-        echo json_encode(['error' => 'database prepare failed']);
-        exit;
-    }
-
-    $stmt->bind_param("sssissis", $type, $naam, $beschrijving, $kamerId, $finalImageUrl, $finalAudioPath, $auteur, $position);
-    $ok = $stmt->execute();
-    $newId = $stmt->insert_id;
-    $stmtError = $stmt->error;
-    $stmt->close();
-
-    if (!$ok) {
-        uploadDebug('database insert failed', ['stmtError' => $stmtError]);
-        if ($hasImageFile) @unlink($targetPath);
-        if ($hasAudioFile) @unlink($targetAudioPath);
-        http_response_code(500);
-        echo json_encode(['error' => 'database insert failed']);
-        exit;
-    }
-
-    http_response_code(201);
-    echo json_encode([
-        'id'            => $newId,
-        'Type'          => $type,
-        'Naam'          => $naam,
-        'Beschrijving'  => $beschrijving,
-        'KamerId'       => $kamerId,
-        'ImageUrl'      => $finalImageUrl,
-        'AudioFilePath' => $finalAudioPath,
-        'Auteur'        => $auteur,
-        'Position'      => $position,
-    ]);
-    exit;
-}
-
-// -------------------- Overige GET-routes (bestaand) --------------------
-if ($route !== '' && ctype_digit($route) && (int) $route > 0) {
+// GET /api/123 of /api/123/Naam
+if ($route !== '' && ctype_digit($route) && (int)$route > 0) {
+    $id = (int)$route;
     if (isset($url[1])) {
-        $allowedColumns = ['Id', 'Type', 'Naam', 'Beschrijving', 'ImageUrl', 'Position', 'Auteur', 'KamerId', 'AudioFilePath'];
-        $column = $url[1];
-        if (!in_array($column, $allowedColumns, true)) {
+        $allowed = ['Id','Type','Naam','Beschrijving','ImageUrl','Position','Auteur','FramePlaatsId','AudioFilePath','Frameless'];
+        $col = $url[1];
+        if (!in_array($col, $allowed, true)) {
             http_response_code(400);
-            echo json_encode(['error' => 'Invalid column']);
+            echo json_encode(['error' => 'Ongeldige kolom']);
             exit;
         }
-        $stmt = $conn->prepare("SELECT `$column` FROM `Kunstwerken` WHERE Id = ?");
-        $id = intval($route);
+        $stmt = $conn->prepare("SELECT `$col` FROM `Kunstwerken` WHERE Id = ?");
         $stmt->bind_param("i", $id);
-        $stmt->execute();
-        $result = $stmt->get_result();
-        echo json_encode($result->fetch_all(MYSQLI_ASSOC));
-        $stmt->close();
-        exit;
+    } else {
+        $stmt = $conn->prepare("SELECT * FROM `Kunstwerken` WHERE Id = ?");
+        $stmt->bind_param("i", $id);
     }
-    $stmt = $conn->prepare("SELECT * FROM `Kunstwerken` WHERE Id = ?");
-    $id = intval($route);
-    $stmt->bind_param("i", $id);
     $stmt->execute();
     $result = $stmt->get_result();
     echo json_encode($result->fetch_all(MYSQLI_ASSOC));
