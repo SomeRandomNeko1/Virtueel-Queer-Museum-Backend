@@ -1,4 +1,4 @@
-const API = "http://10.120.5.132:8000"
+const API = "/api"
 
 // Global logout callback wordt ingesteld door App.jsx
 let onGlobalLogout = null

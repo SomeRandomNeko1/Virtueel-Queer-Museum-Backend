@@ -1,16 +1,18 @@
 import { useState, useEffect, useCallback, useRef } from "react"
-import { FiHome, FiList, FiSettings, FiSearch, FiX, FiImage, FiChevronDown, FiLogOut, FiUser, FiUpload } from "react-icons/fi"
+import { FiHome, FiList, FiSettings, FiSearch, FiX, FiImage, FiChevronDown, FiLogOut, FiUser, FiUpload, FiGrid } from "react-icons/fi"
 import { setLogoutCallback, apiFetch, decodeToken } from "./api"
 import NotifBell from "./NotifBell"
 import LogView from "./Log"
 import UploadView from "./Upload"
+import IFramePanel from "./overzicht"
 import "./App.css"
 
 const navItems = [
-  { id: "home", label: "Home", Icon: FiHome },
-  { id: "upload", label: "Upload", Icon: FiUpload },
-  { id: "log", label: "Log", Icon: FiList },
-  { id: "settings", label: "Instellingen", Icon: FiSettings },
+  { id: "home",      label: "Home",        Icon: FiHome },
+  { id: "overzicht", label: "Overzicht",   Icon: FiGrid },
+  { id: "upload",    label: "Upload",      Icon: FiUpload },
+  { id: "log",       label: "Log",         Icon: FiList },
+  { id: "settings",  label: "Instellingen",Icon: FiSettings },
 ]
 
 export default function App({ token, onLogout, logs, addLog }) {
@@ -23,7 +25,6 @@ export default function App({ token, onLogout, logs, addLog }) {
     return () => window.removeEventListener("resize", check)
   }, [])
 
-  // ✅ Register global logout callback (zodat api.js logout kan triggeren bij 401)
   useEffect(() => {
     setLogoutCallback(() => {
       localStorage.removeItem("cms_token")
@@ -32,14 +33,13 @@ export default function App({ token, onLogout, logs, addLog }) {
     return () => setLogoutCallback(null)
   }, [onLogout])
 
-  // ✅ Proactive token expiration check
   useEffect(() => {
     if (!token) return
 
     const payload = decodeToken(token)
     if (!payload?.exp) return
 
-    const timeUntilExpiry = (payload.exp * 1000) - Date.now() - 5000 // 5s buffer
+    const timeUntilExpiry = (payload.exp * 1000) - Date.now() - 5000
 
     if (timeUntilExpiry > 0) {
       logoutTimerRef.current = setTimeout(() => {
@@ -48,7 +48,6 @@ export default function App({ token, onLogout, logs, addLog }) {
         onLogout?.()
       }, timeUntilExpiry)
     } else {
-      // Token al verlopen
       localStorage.removeItem("cms_token")
       onLogout?.()
     }
@@ -56,14 +55,14 @@ export default function App({ token, onLogout, logs, addLog }) {
     return () => clearTimeout(logoutTimerRef.current)
   }, [token, onLogout, addLog])
 
-  const [items, setItems] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [err, setErr] = useState(null)
-  const [q, setQ] = useState("")
+  const [items, setItems]         = useState([])
+  const [loading, setLoading]     = useState(true)
+  const [err, setErr]             = useState(null)
+  const [q, setQ]                 = useState("")
   const [typeFilter, setTypeFilter] = useState(null)
-  const [page, setPage] = useState("home")
-  const [picked, setPicked] = useState(null)
-  const [showMenu, setShowMenu] = useState(false)
+  const [page, setPage]           = useState("home")
+  const [picked, setPicked]       = useState(null)
+  const [showMenu, setShowMenu]   = useState(false)
   const menuRef = useRef(null)
 
   useEffect(() => {
@@ -72,22 +71,18 @@ export default function App({ token, onLogout, logs, addLog }) {
         setShowMenu(false)
       }
     }
-    if (showMenu) {
-      document.addEventListener("mousedown", handleClickOutside)
-    }
+    if (showMenu) document.addEventListener("mousedown", handleClickOutside)
     return () => document.removeEventListener("mousedown", handleClickOutside)
   }, [showMenu])
 
-  // ✅ load gebruikt apiFetch — auto 401 → logout via globale callback
   const load = useCallback(async () => {
     setLoading(true); setErr(null)
     try {
-      const res = await apiFetch("/")
+      const res  = await apiFetch("/")
       const data = await res.json()
       setItems(data)
     } catch (e) {
       setErr(e.message)
-      // Geen onLogout() nodig hier - apiFetch heeft dit al gedaan bij 401
     }
     setLoading(false)
   }, [])
@@ -147,6 +142,7 @@ export default function App({ token, onLogout, logs, addLog }) {
           </span>
 
           <div className="flex items-center gap-2.5">
+            {/* Search */}
             <div className="flex items-center gap-1.5 bg-warm-bg border border-border rounded-md px-2.5 py-1.5 text-muted transition-colors duration-150 focus-within:border-accent">
               <FiSearch size={13} />
               <input
@@ -166,6 +162,7 @@ export default function App({ token, onLogout, logs, addLog }) {
 
             <NotifBell />
 
+            {/* User menu */}
             <div className="relative" ref={menuRef}>
               <button
                 onClick={() => setShowMenu(p => !p)}
@@ -201,9 +198,7 @@ export default function App({ token, onLogout, logs, addLog }) {
                   </div>
 
                   <div className="p-1">
-                    <button
-                      className="flex items-center gap-2.5 w-full px-3 py-2 rounded-md bg-transparent border-none cursor-pointer font-body text-[13px] text-muted hover:bg-warm-bg hover:text-ink transition-colors duration-120 text-left"
-                    >
+                    <button className="flex items-center gap-2.5 w-full px-3 py-2 rounded-md bg-transparent border-none cursor-pointer font-body text-[13px] text-muted hover:bg-warm-bg hover:text-ink transition-colors duration-120 text-left">
                       <FiUser size={13} />
                       <span>Profiel</span>
                     </button>
@@ -224,6 +219,7 @@ export default function App({ token, onLogout, logs, addLog }) {
           </div>
         </header>
 
+        {/* Page content */}
         <main className="p-4.5 pb-20 md:p-7 md:pb-7 flex-1 overflow-y-auto md:overflow-hidden flex flex-col">
           {page === "home" && (
             <HomeView
@@ -232,8 +228,17 @@ export default function App({ token, onLogout, logs, addLog }) {
               picked={picked} setPicked={setPicked} isMobile={isMobile}
             />
           )}
+
+          {page === "overzicht" && (
+            <div className="flex flex-1 min-h-0 h-[calc(100vh-116px)]">
+              <IFramePanel picked={null} fullPage />
+            </div>
+          )}
+
           {page === "upload" && <UploadView addLog={addLog} />}
+
           {page === "log" && <LogView logs={logs} />}
+
           {page === "settings" && (
             <div className="flex items-center justify-center mt-20 text-muted text-[14px] italic">
               <p>Instellingen nog niet beschikbaar</p>
@@ -242,6 +247,7 @@ export default function App({ token, onLogout, logs, addLog }) {
         </main>
       </div>
 
+      {/* ── Bottom nav (mobile) ─────────────────────────────────────── */}
       {isMobile && (
         <nav
           className="fixed bottom-0 left-0 right-0 bg-paper border-t border-border flex z-10"
@@ -270,29 +276,7 @@ export default function App({ token, onLogout, logs, addLog }) {
   )
 }
 
-function IFramePanel({ picked }) {
-  return (
-    <div className="w-[48%] shrink-0 flex flex-col bg-paper border border-border rounded-[10px] overflow-hidden">
-      {picked && (
-        <div className="flex items-center gap-1.75 px-3.5 py-1.75 bg-accent-light border-b border-border text-[11.5px] text-muted shrink-0 tracking-[.02em]">
-          <FiImage size={11} />
-          <span className="font-medium text-ink whitespace-nowrap overflow-hidden text-ellipsis">
-            {picked.Naam || "Geselecteerd werk"}
-          </span>
-        </div>
-      )}
-      <div className="flex-1 min-h-0 relative">
-        <iframe
-          src={picked?.url || ""}
-          title="Extern paneel"
-          sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
-          className="w-full h-full border-none block"
-        />
-      </div>
-    </div>
-  )
-}
-
+/* ── HomeView ────────────────────────────────────────────────────────── */
 function HomeView({ items, loading, err, types, typeFilter, setTypeFilter, picked, setPicked, isMobile }) {
   return (
     <div className="flex gap-5.5 flex-1 min-h-0 flex-col md:flex-row h-auto md:h-[calc(100vh-116px)]">
@@ -344,8 +328,6 @@ function HomeView({ items, loading, err, types, typeFilter, setTypeFilter, picke
             )
         )}
       </div>
-
-      {!isMobile && <IFramePanel picked={picked} />}
     </div>
   )
 }
@@ -364,10 +346,10 @@ function Card({ item, active, onClick }) {
       <div className="h-30 bg-warm-bg flex items-center justify-center overflow-hidden relative">
         {imageSrc
           ? <img
-            src={imageSrc}
-            alt={item.Naam}
-            className="w-full h-full object-cover transition-transform duration-350 ease-in-out group-hover:scale-[1.04]"
-          />
+              src={imageSrc}
+              alt={item.Naam}
+              className="w-full h-full object-cover transition-transform duration-350 ease-in-out group-hover:scale-[1.04]"
+            />
           : <FiImage size={26} color="#ccc" />
         }
         {active && <div className="absolute inset-0 bg-black/5" />}
