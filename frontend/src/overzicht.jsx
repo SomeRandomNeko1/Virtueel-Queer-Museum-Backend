@@ -18,7 +18,7 @@ export default function IFramePanel({ picked, fullPage = false }) {
       <div className="flex-1 min-h-0 relative">
         <iframe
           key={picked?.url ?? "default"}
-          src={picked?.url || "http://10.120.5.132:8090/Main-rooms/"}
+          src={picked?.url || "http://10.120.5.132:8090/Main-rooms/menu.html"}
           title="Extern paneel"
           sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
           className="absolute inset-0 w-full h-full border-none block"
