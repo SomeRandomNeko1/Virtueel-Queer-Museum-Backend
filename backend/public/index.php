@@ -1,18 +1,28 @@
 <?php
-header('Access-Control-Allow-Origin: http://10.120.5.132:5173');
-header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With');
-header('Access-Control-Allow-Credentials: true');
+function cors(): void {
+    if (isset($_SERVER['HTTP_ORIGIN'])) {
+        header("Access-Control-Allow-Origin: {$_SERVER['HTTP_ORIGIN']}");
+        header('Access-Control-Allow-Credentials: true');
+        header('Access-Control-Max-Age: 86400');
+    }
+
+    if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
+        if (isset($_SERVER['HTTP_ACCESS_CONTROL_REQUEST_METHOD']))
+            header("Access-Control-Allow-Methods: GET, POST, OPTIONS");
+
+        if (isset($_SERVER['HTTP_ACCESS_CONTROL_REQUEST_HEADERS']))
+            header("Access-Control-Allow-Headers: {$_SERVER['HTTP_ACCESS_CONTROL_REQUEST_HEADERS']}");
+
+        http_response_code(204);
+        exit;
+    }
+}
+
+cors();
 
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 header('Pragma: no-cache');
-
-// Belangrijk: Het OPTIONS (preflight) verzoek moet direct akkoord krijgen met de headers hierboven
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-    http_response_code(204);
-    exit;
-}
 
 require_once dirname(__DIR__) . "/src/config.php";
 
@@ -197,7 +207,16 @@ if ($route === 'uploads' && ($UPLOADS_PUBLIC ?? '1') === '0') {
 
 // --- NIEUW: Route voor kamers ---
 if ($route === 'kamers') {
-    $stmt = $conn->prepare("SELECT `Id`, `Naam` FROM `Kamers` ORDER BY `Id`");
+    $stmt = $conn->prepare("SELECT `KamerId`, `Naam` FROM `Kamers` ORDER BY `KamerId`");
+    $stmt->execute();
+    $result = $stmt->get_result();
+    echo json_encode($result->fetch_all(MYSQLI_ASSOC));
+    $stmt->close();
+    exit;
+}
+
+if ($route === 'frames') {
+    $stmt = $conn->prepare("SELECT `FramePlaatsId`, `KamerId`, `PlaatsNr` FROM `FramePlaatsen` ORDER BY `KamerId`, `PlaatsNr`");
     $stmt->execute();
     $result = $stmt->get_result();
     echo json_encode($result->fetch_all(MYSQLI_ASSOC));
@@ -226,8 +245,8 @@ if ($route === 'upload') {
     $type         = trim((string) ($_POST['Type'] ?? $_POST['type'] ?? ''));
     $beschrijving = trim((string) ($_POST['beschrijving'] ?? $_POST['Beschrijving'] ?? ''));
     $auteur       = trim((string) ($_POST['auteur'] ?? $_POST['Auteur'] ?? ''));
-    $kamerIdRaw   = (string) ($_POST['kamerId'] ?? $_POST['KamerId'] ?? '');
-    $positieRaw   = (string) ($_POST['position'] ?? $_POST['Position'] ?? '');  // Position in kamer
+    $framePlaatsIdRaw = (string) ($_POST['framePlaatsId'] ?? $_POST['FramePlaatsId'] ?? '');
+    $framelessRaw     = (string) ($_POST['frameless'] ?? '0');
     $imageUrl     = trim((string) ($_POST['imageUrl'] ?? $_POST['ImageUrl'] ?? ''));
     $audioPath    = trim((string) ($_POST['audioFilePath'] ?? $_POST['AudioFilePath'] ?? ''));
 
@@ -267,22 +286,29 @@ if ($route === 'upload') {
     }
 
     // KamerId: optioneel? In DB is het een FK, verplicht.
-    if (!ctype_digit($kamerIdRaw) || (int)$kamerIdRaw <= 0) {
-        http_response_code(400);
-        echo json_encode(['error' => 'ongeldige KamerId']);
-        exit;
-    }
-    $kamerId = (int)$kamerIdRaw;
-
-    // Position: optioneel, default 0 of 1?
-    $position = 0;
-    if ($positieRaw !== '') {
-        if (!ctype_digit($positieRaw) || (int)$positieRaw < 0) {
+    $frameless = $framelessRaw === '1' ? 1 : 0;
+    $framePlaatsId = null;
+    if (!$frameless) {
+        if (!ctype_digit($framePlaatsIdRaw) || (int)$framePlaatsIdRaw <= 0) {
             http_response_code(400);
-            echo json_encode(['error' => 'ongeldige positie']);
+            echo json_encode(['error' => 'ongeldige FramePlaatsId']);
             exit;
         }
-        $position = (int)$positieRaw;
+        $framePlaatsId = (int)$framePlaatsIdRaw;
+    }
+
+    $framePlaatsIdRaw = (string) ($_POST['framePlaatsId'] ?? $_POST['FramePlaatsId'] ?? '');
+    $framelessRaw     = (string) ($_POST['frameless'] ?? '0');
+
+    $frameless = $framelessRaw === '1' ? 1 : 0;
+    $framePlaatsId = null;
+    if (!$frameless) {
+        if (!ctype_digit($framePlaatsIdRaw) || (int)$framePlaatsIdRaw <= 0) {
+            http_response_code(400);
+            echo json_encode(['error' => 'ongeldige FramePlaatsId']);
+            exit;
+        }
+        $framePlaatsId = (int)$framePlaatsIdRaw;
     }
 
     // -------------------- Afbeelding verwerken --------------------
@@ -417,7 +443,7 @@ if ($route === 'upload') {
     // Let op: de tabel `Kunstwerken` heeft kolommen: Id, Type, Naam, Beschrijving, KamerId, FrameNummer, Frameless, ImageUrl, AudioFilePath, Auteur, Position
     // Wij gebruiken: Type, Naam, Beschrijving, KamerId, ImageUrl, AudioFilePath, Auteur, Position
     // FrameNummer en Frameless laten we voor nu op NULL/0, of pas aan als nodig.
-    $stmt = $conn->prepare("INSERT INTO `Kunstwerken` (`Type`, `Naam`, `Beschrijving`, `KamerId`, `ImageUrl`, `AudioFilePath`, `Auteur`, `Position`) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+    $stmt = $conn->prepare("INSERT INTO `Kunstwerken` (`Type`, `Naam`, `Beschrijving`, `FramePlaatsId`, `ImageUrl`, `Audiopath`, `Auteur`, `Frameless`) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
     if (!$stmt) {
         uploadDebug('database prepare failed', ['dbError' => $conn->error]);
         if ($hasImageFile) @unlink($targetPath);
@@ -427,7 +453,7 @@ if ($route === 'upload') {
         exit;
     }
 
-    $stmt->bind_param("sssissis", $type, $naam, $beschrijving, $kamerId, $finalImageUrl, $finalAudioPath, $auteur, $position);
+    $stmt->bind_param("sssissis", $type, $naam, $beschrijving, $framePlaatsId, $finalImageUrl, $finalAudioPath, $auteur, $frameless);
     $ok = $stmt->execute();
     $newId = $stmt->insert_id;
     $stmtError = $stmt->error;
@@ -444,15 +470,15 @@ if ($route === 'upload') {
 
     http_response_code(201);
     echo json_encode([
-        'id'            => $newId,
-        'Type'          => $type,
-        'Naam'          => $naam,
-        'Beschrijving'  => $beschrijving,
-        'KamerId'       => $kamerId,
-        'ImageUrl'      => $finalImageUrl,
-        'AudioFilePath' => $finalAudioPath,
-        'Auteur'        => $auteur,
-        'Position'      => $position,
+        'id'           => $newId,
+        'Type'         => $type,
+        'Naam'         => $naam,
+        'Beschrijving' => $beschrijving,
+        'FramePlaatsId'=> $framePlaatsId,
+        'ImageUrl'     => $finalImageUrl,
+        'Audiopath'    => $finalAudioPath,
+        'Auteur'       => $auteur,
+        'Frameless'    => $frameless,
     ]);
     exit;
 }
@@ -460,7 +486,7 @@ if ($route === 'upload') {
 // -------------------- Overige GET-routes (bestaand) --------------------
 if ($route !== '' && ctype_digit($route) && (int) $route > 0) {
     if (isset($url[1])) {
-        $allowedColumns = ['Id', 'Type', 'Naam', 'Beschrijving', 'ImageUrl', 'Position', 'Auteur', 'KamerId', 'AudioFilePath'];
+        $allowedColumns = ['Id', 'Type', 'Naam', 'Beschrijving', 'ImageUrl', 'Audiopath', 'Auteur', 'FramePlaatsId', 'Frameless'];
         $column = $url[1];
         if (!in_array($column, $allowedColumns, true)) {
             http_response_code(400);

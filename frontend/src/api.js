@@ -1,5 +1,4 @@
-const API = "http://10.120.5.132:8000" //this must be changed due to idk what happend in that stupid POS pc
-
+const API = "/api"
 // Global logout callback wordt ingesteld door App.jsx
 let onGlobalLogout = null
 export const setLogoutCallback = (cb) => { onGlobalLogout = cb }
