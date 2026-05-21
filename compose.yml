@@ -18,6 +18,7 @@ services:
       APP_AUTH_USERNAME: ${APP_AUTH_USERNAME:-admin}
       APP_AUTH_PASSWORD: ${APP_AUTH_PASSWORD:-change-me-admin-password}
       APP_JWT_SECRET: ${APP_JWT_SECRET:-change-me-jwt-secret}
+      UPLOAD_BASE_URL: "http://10.120.5.132:8000"
     networks:
       - cms_network
 

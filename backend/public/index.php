@@ -8,7 +8,7 @@ function cors(): void {
 
     if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
         if (isset($_SERVER['HTTP_ACCESS_CONTROL_REQUEST_METHOD']))
-            header("Access-Control-Allow-Methods: GET, POST, OPTIONS");
+            header("Access-Control-Allow-Methods: GET, POST, DELETE, OPTIONS"); 
 
         if (isset($_SERVER['HTTP_ACCESS_CONTROL_REQUEST_HEADERS']))
             header("Access-Control-Allow-Headers: {$_SERVER['HTTP_ACCESS_CONTROL_REQUEST_HEADERS']}");
@@ -25,6 +25,7 @@ header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 header('Pragma: no-cache');
 
 require_once dirname(__DIR__) . "/src/config.php";
+$UPLOAD_BASE_URL = $_ENV['UPLOAD_BASE_URL'] ?? 'http://10.120.5.132:8000';
 
 function readJsonBody(): array
 {
@@ -82,9 +83,8 @@ function uploadDebug(string $message, array $context = []): void
     error_log($line);
 }
 
-function getUploadStorageDir(): string
-{
-    return sys_get_temp_dir() . '/virtueel-queer-museum-uploads';
+function getUploadStorageDir(): string {
+    return __DIR__ . '/uploads';
 }
 
 function serveUploadedImage(string $fileName): void
@@ -163,7 +163,7 @@ if ($route === "auth") {
 $method = $_SERVER['REQUEST_METHOD'];
 
 // Allow POST only for upload, GET for everything else
-if ($method !== 'GET' && !($method === 'POST' && $route === 'upload')) {
+if ($method !== 'GET' && !($method === 'POST' && $route === 'upload') && $method !== 'DELETE') {
     http_response_code(405);
     echo json_encode(['error' => 'method not allowed']);
     exit;
@@ -361,7 +361,8 @@ if ($route === 'upload') {
             exit;
         }
 
-        $finalImageUrl = '/api/uploads/' . $safeFileName;
+        $finalImageUrl = $UPLOAD_BASE_URL . '/uploads/' . $safeFileName;
+        $uploadedImageTmp = $targetPath;
     } elseif ($imageUrl !== '') {
         // Als er een URL is meegegeven, valideer deze eenvoudig
         if (!filter_var($imageUrl, FILTER_VALIDATE_URL)) {
@@ -427,7 +428,7 @@ if ($route === 'upload') {
             exit;
         }
 
-        $finalAudioPath = '/api/uploads/' . $safeAudioName;
+        $finalAudioPath = $UPLOAD_BASE_URL . '/uploads/' . $safeAudioName;
     } elseif ($audioPath !== '') {
         // Gebruik het opgegeven pad (bijv. externe URL of lokaal pad)
         if (!filter_var($audioPath, FILTER_VALIDATE_URL) && !preg_match('#^/[a-zA-Z0-9_/.-]+$#', $audioPath)) {
@@ -480,6 +481,33 @@ if ($route === 'upload') {
         'Auteur'       => $auteur,
         'Frameless'    => $frameless,
     ]);
+    exit;
+}
+
+if ($method === 'DELETE' && $route !== '' && ctype_digit($route) && (int)$route > 0) {
+    $id = (int)$route;
+    $stmt = $conn->prepare("DELETE FROM `Kunstwerken` WHERE `Id` = ?");
+    if (!$stmt) {
+        http_response_code(500);
+        echo json_encode(['error' => 'database prepare failed']);
+        exit;
+    }
+    $stmt->bind_param("i", $id);
+    $ok = $stmt->execute();
+    $affected = $stmt->affected_rows;
+    $stmt->close();
+
+    if (!$ok) {
+        http_response_code(500);
+        echo json_encode(['error' => 'delete failed']);
+        exit;
+    }
+    if ($affected === 0) {
+        http_response_code(404);
+        echo json_encode(['error' => 'niet gevonden']);
+        exit;
+    }
+    echo json_encode(['deleted' => $id]);
     exit;
 }
 
