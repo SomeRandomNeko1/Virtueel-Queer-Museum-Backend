@@ -2,17 +2,17 @@
 function cors(): void {
     if (isset($_SERVER['HTTP_ORIGIN'])) {
         header("Access-Control-Allow-Origin: {$_SERVER['HTTP_ORIGIN']}");
-        header('Access-Control-Allow-Credentials: true');
-        header('Access-Control-Max-Age: 86400');
+    } else {
+        header("Access-Control-Allow-Origin: *");  // ← fallback voor Three.js
     }
+    header('Access-Control-Allow-Credentials: true');
+    header('Access-Control-Max-Age: 86400');
 
     if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
         if (isset($_SERVER['HTTP_ACCESS_CONTROL_REQUEST_METHOD']))
-            header("Access-Control-Allow-Methods: GET, POST, DELETE, OPTIONS"); 
-
+            header("Access-Control-Allow-Methods: GET, POST, DELETE, OPTIONS");
         if (isset($_SERVER['HTTP_ACCESS_CONTROL_REQUEST_HEADERS']))
             header("Access-Control-Allow-Headers: {$_SERVER['HTTP_ACCESS_CONTROL_REQUEST_HEADERS']}");
-
         http_response_code(204);
         exit;
     }
@@ -89,6 +89,8 @@ function getUploadStorageDir(): string {
 
 function serveUploadedImage(string $fileName): void
 {
+    header("Access-Control-Allow-Origin: *");  
+
     if (!preg_match('/^[a-f0-9]{32}\.(jpg|jpeg|png|webp)$/i', $fileName)) {
         http_response_code(404);
         echo json_encode(['error' => 'not found']);
@@ -162,40 +164,42 @@ if ($route === "auth") {
 
 $method = $_SERVER['REQUEST_METHOD'];
 
-// Allow POST only for upload, GET for everything else
 if ($method !== 'GET' && !($method === 'POST' && $route === 'upload') && $method !== 'DELETE') {
     http_response_code(405);
     echo json_encode(['error' => 'method not allowed']);
     exit;
 }
 
-$token = getBearerToken();
-$tokenParts = explode(".", $token);
-if (count($tokenParts) !== 3) {
-    http_response_code(401);
-    echo json_encode(['error' => 'no token']);
-    exit;
-}
+// GET requests hebben geen token nodig
+if ($method !== 'GET') {
+    $token = getBearerToken();
+    $tokenParts = explode(".", $token);
+    if (count($tokenParts) !== 3) {
+        http_response_code(401);
+        echo json_encode(['error' => 'no token']);
+        exit;
+    }
 
-$decodedHeader = json_decode(base64UrlDecode($tokenParts[0]) ?: '', true);
-$decodedPayload = json_decode(base64UrlDecode($tokenParts[1]) ?: '', true);
-$tokenKey = $tokenParts[2];
+    $decodedHeader = json_decode(base64UrlDecode($tokenParts[0]) ?: '', true);
+    $decodedPayload = json_decode(base64UrlDecode($tokenParts[1]) ?: '', true);
+    $tokenKey = $tokenParts[2];
 
-if (!is_array($decodedHeader) || ($decodedHeader['alg'] ?? '') !== 'HS256'
-    || !is_array($decodedPayload) || ($decodedPayload['sub'] ?? '') !== $AUTH_USERNAME
-    || !isset($decodedPayload['exp']) || !is_numeric($decodedPayload['exp'])
-    || time() >= (int) $decodedPayload['exp']) {
-    http_response_code(401);
-    echo json_encode(['error' => 'token expired']);
-    exit;
-}
+    if (!is_array($decodedHeader) || ($decodedHeader['alg'] ?? '') !== 'HS256'
+        || !is_array($decodedPayload) || ($decodedPayload['sub'] ?? '') !== $AUTH_USERNAME
+        || !isset($decodedPayload['exp']) || !is_numeric($decodedPayload['exp'])
+        || time() >= (int) $decodedPayload['exp']) {
+        http_response_code(401);
+        echo json_encode(['error' => 'token expired']);
+        exit;
+    }
 
-$signature = hash_hmac('sha256', "$tokenParts[0].$tokenParts[1]", $JWT_SECRET, true);
-$signatureEncoded = base64UrlEncode($signature);
-if (!hash_equals($signatureEncoded, $tokenKey)) {
-    http_response_code(401);
-    echo json_encode(['error' => 'no token']);
-    exit;
+    $signature = hash_hmac('sha256', "$tokenParts[0].$tokenParts[1]", $JWT_SECRET, true);
+    $signatureEncoded = base64UrlEncode($signature);
+    if (!hash_equals($signatureEncoded, $tokenKey)) {
+        http_response_code(401);
+        echo json_encode(['error' => 'no token']);
+        exit;
+    }
 }
 
 require_once dirname(__DIR__) . "/src/connection.php";
@@ -454,7 +458,7 @@ if ($route === 'upload') {
         exit;
     }
 
-    $stmt->bind_param("sssissis", $type, $naam, $beschrijving, $framePlaatsId, $finalImageUrl, $finalAudioPath, $auteur, $frameless);
+    $stmt->bind_param("sssisssi", $type, $naam, $beschrijving, $framePlaatsId, $finalImageUrl, $finalAudioPath, $auteur, $frameless);
     $ok = $stmt->execute();
     $newId = $stmt->insert_id;
     $stmtError = $stmt->error;
