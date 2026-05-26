@@ -1,12 +1,18 @@
-FROM php:8.2-apache
+FROM node:20-alpine
 
-RUN docker-php-ext-install pdo pdo_mysql mysqli
+WORKDIR /app
 
-RUN a2enmod rewrite
+# Copy package files first to leverage Docker caching
+COPY package*.json ./
 
-RUN { \
-	echo 'file_uploads=On'; \
-	echo 'upload_max_filesize=50M'; \
-	echo 'post_max_size=60M'; \
-	echo 'max_file_uploads=20'; \
-} > /usr/local/etc/php/conf.d/uploads.ini
+# Install dependencies (including your devDependencies like tailwind)
+RUN npm install
+
+# Copy the rest of your frontend code
+COPY . .
+
+# Expose the Vite default port
+EXPOSE 5173
+
+# Run the dev server
+CMD ["npx", "vite", "--host"]

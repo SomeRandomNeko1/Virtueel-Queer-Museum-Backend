@@ -1,6 +1,6 @@
 services:
   php:
-    build: cms-php:latest
+    build: .
     ports:
       - "8000:80"
     volumes:
@@ -18,24 +18,25 @@ services:
       APP_AUTH_USERNAME: ${APP_AUTH_USERNAME:-admin}
       APP_AUTH_PASSWORD: ${APP_AUTH_PASSWORD:-change-me-admin-password}
       APP_JWT_SECRET: ${APP_JWT_SECRET:-change-me-jwt-secret}
+      UPLOAD_BASE_URL: "http://10.120.5.132:8000"
     networks:
       - cms_network
 
   frontend:
-    image: cms-frontend:latest 
+    build: ./frontend       # <-- Change this from 'image: node:20-alpine'
+    working_dir: /app
     volumes:
       - ./frontend:/app
-      - /app/node_modules       
+      - /app/node_modules   # Keeps container node_modules safe from host overrides
     ports:
       - "5173:5173"
-    command: npx vite --host    
+    # command: npx vite --host   # <-- You can delete or comment this out (handled by Dockerfile) 
     environment:
       VITE_PHP_TARGET: http://php:80
     depends_on:
       - php
     networks:
       - cms_network
-
 
   mysql:
     image: mysql:8.0

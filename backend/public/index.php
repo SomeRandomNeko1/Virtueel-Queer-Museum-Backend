@@ -3,14 +3,22 @@ function cors(): void {
     if (isset($_SERVER['HTTP_ORIGIN'])) {
         header("Access-Control-Allow-Origin: {$_SERVER['HTTP_ORIGIN']}");
     } else {
+<<<<<<< HEAD
         header("Access-Control-Allow-Origin: *");
+=======
+        header("Access-Control-Allow-Origin: *");  // ← fallback voor Three.js
+>>>>>>> 32f7b41b87c721e6c2a5abe5eb5915edefe1ec58
     }
     header('Access-Control-Allow-Credentials: true');
     header('Access-Control-Max-Age: 86400');
 
     if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
         if (isset($_SERVER['HTTP_ACCESS_CONTROL_REQUEST_METHOD']))
+<<<<<<< HEAD
             header("Access-Control-Allow-Methods: GET, POST, PATCH, DELETE, OPTIONS");
+=======
+            header("Access-Control-Allow-Methods: GET, POST, DELETE, OPTIONS");
+>>>>>>> 32f7b41b87c721e6c2a5abe5eb5915edefe1ec58
         if (isset($_SERVER['HTTP_ACCESS_CONTROL_REQUEST_HEADERS']))
             header("Access-Control-Allow-Headers: {$_SERVER['HTTP_ACCESS_CONTROL_REQUEST_HEADERS']}");
         http_response_code(204);
@@ -87,10 +95,16 @@ function getUploadStorageDir(): string {
 
 function serveUploadedFile(string $fileName): void
 {
+<<<<<<< HEAD
     header("Access-Control-Allow-Origin: *");
 
     // Afbeeldingen én audiobestanden toestaan
     if (!preg_match('/^[a-f0-9]{32}\.(jpg|jpeg|png|webp|mp3|ogg|wav|m4a)$/i', $fileName)) {
+=======
+    header("Access-Control-Allow-Origin: *");  
+
+    if (!preg_match('/^[a-f0-9]{32}\.(jpg|jpeg|png|webp)$/i', $fileName)) {
+>>>>>>> 32f7b41b87c721e6c2a5abe5eb5915edefe1ec58
         http_response_code(404);
         echo json_encode(['error' => 'not found']);
         exit;
@@ -170,6 +184,7 @@ if ($route === "auth") {
 
 $method = $_SERVER['REQUEST_METHOD'];
 
+<<<<<<< HEAD
 // Methode-check: sta GET, POST (upload), PATCH, DELETE toe
 if ($method !== 'GET'
     && !($method === 'POST' && $route === 'upload')
@@ -177,12 +192,19 @@ if ($method !== 'GET'
     && $method !== 'PATCH'
     && $method !== 'DELETE'
 ) {
+=======
+if ($method !== 'GET' && !($method === 'POST' && $route === 'upload') && $method !== 'DELETE') {
+>>>>>>> 32f7b41b87c721e6c2a5abe5eb5915edefe1ec58
     http_response_code(405);
     echo json_encode(['error' => 'method not allowed']);
     exit;
 }
 
+<<<<<<< HEAD
 // Token verplicht voor alles behalve GET
+=======
+// GET requests hebben geen token nodig
+>>>>>>> 32f7b41b87c721e6c2a5abe5eb5915edefe1ec58
 if ($method !== 'GET') {
     $token = getBearerToken();
     $tokenParts = explode(".", $token);
@@ -191,6 +213,7 @@ if ($method !== 'GET') {
         echo json_encode(['error' => 'no token']);
         exit;
     }
+<<<<<<< HEAD
     $decodedHeader  = json_decode(base64UrlDecode($tokenParts[0]) ?: '', true);
     $decodedPayload = json_decode(base64UrlDecode($tokenParts[1]) ?: '', true);
     $tokenKey = $tokenParts[2];
@@ -200,12 +223,30 @@ if ($method !== 'GET') {
      || !isset($decodedPayload['exp']) || !is_numeric($decodedPayload['exp'])
      || time() >= (int) $decodedPayload['exp']
     ) {
+=======
+
+    $decodedHeader = json_decode(base64UrlDecode($tokenParts[0]) ?: '', true);
+    $decodedPayload = json_decode(base64UrlDecode($tokenParts[1]) ?: '', true);
+    $tokenKey = $tokenParts[2];
+
+    if (!is_array($decodedHeader) || ($decodedHeader['alg'] ?? '') !== 'HS256'
+        || !is_array($decodedPayload) || ($decodedPayload['sub'] ?? '') !== $AUTH_USERNAME
+        || !isset($decodedPayload['exp']) || !is_numeric($decodedPayload['exp'])
+        || time() >= (int) $decodedPayload['exp']) {
+>>>>>>> 32f7b41b87c721e6c2a5abe5eb5915edefe1ec58
         http_response_code(401);
         echo json_encode(['error' => 'token expired']);
         exit;
     }
+<<<<<<< HEAD
     $signature = hash_hmac('sha256', "$tokenParts[0].$tokenParts[1]", $JWT_SECRET, true);
     if (!hash_equals(base64UrlEncode($signature), $tokenKey)) {
+=======
+
+    $signature = hash_hmac('sha256', "$tokenParts[0].$tokenParts[1]", $JWT_SECRET, true);
+    $signatureEncoded = base64UrlEncode($signature);
+    if (!hash_equals($signatureEncoded, $tokenKey)) {
+>>>>>>> 32f7b41b87c721e6c2a5abe5eb5915edefe1ec58
         http_response_code(401);
         echo json_encode(['error' => 'no token']);
         exit;
@@ -289,9 +330,22 @@ if ($route === 'upload' && $method === 'POST') {
         $uploadDir = getUploadStorageDir();
         if (!is_dir($uploadDir) && !mkdir($uploadDir, 0775, true)) { http_response_code(500); echo json_encode(['error' => 'kon uploadmap niet maken']); exit; }
         $safeFileName = bin2hex(random_bytes(16)) . '.' . $allowedMimes[$mimeType];
+<<<<<<< HEAD
         $targetPath   = $uploadDir . '/' . $safeFileName;
         if (!move_uploaded_file($file['tmp_name'], $targetPath)) { http_response_code(500); echo json_encode(['error' => 'kon bestand niet opslaan']); exit; }
         $finalImageUrl = $UPLOAD_BASE_URL . '/uploads/' . $safeFileName;
+=======
+        $targetPath = $uploadDir . '/' . $safeFileName;
+
+        if (!move_uploaded_file($file['tmp_name'], $targetPath)) {
+            http_response_code(500);
+            echo json_encode(['error' => 'kon bestand niet opslaan']);
+            exit;
+        }
+
+        $finalImageUrl = $UPLOAD_BASE_URL . '/uploads/' . $safeFileName;
+        $uploadedImageTmp = $targetPath;
+>>>>>>> 32f7b41b87c721e6c2a5abe5eb5915edefe1ec58
     } elseif ($imageUrl !== '') {
         if (!filter_var($imageUrl, FILTER_VALIDATE_URL)) { http_response_code(400); echo json_encode(['error' => 'ongeldige ImageUrl']); exit; }
         if (mb_strlen($imageUrl) > 500) { http_response_code(400); echo json_encode(['error' => 'ImageUrl is te lang']); exit; }
@@ -315,7 +369,17 @@ if ($route === 'upload' && $method === 'POST') {
         if (!is_dir($uploadDir) && !mkdir($uploadDir, 0775, true)) { http_response_code(500); echo json_encode(['error' => 'kon uploadmap niet maken']); exit; }
         $safeAudioName = bin2hex(random_bytes(16)) . '.' . $allowedAudioMimes[$mimeType];
         $targetAudioPath = $uploadDir . '/' . $safeAudioName;
+<<<<<<< HEAD
         if (!move_uploaded_file($audioFile['tmp_name'], $targetAudioPath)) { http_response_code(500); echo json_encode(['error' => 'kon audiobestand niet opslaan']); exit; }
+=======
+
+        if (!move_uploaded_file($audioFile['tmp_name'], $targetAudioPath)) {
+            http_response_code(500);
+            echo json_encode(['error' => 'kon audiobestand niet opslaan']);
+            exit;
+        }
+
+>>>>>>> 32f7b41b87c721e6c2a5abe5eb5915edefe1ec58
         $finalAudioPath = $UPLOAD_BASE_URL . '/uploads/' . $safeAudioName;
     } elseif ($audioPath !== '') {
         if (!filter_var($audioPath, FILTER_VALIDATE_URL) && !preg_match('#^/[a-zA-Z0-9_/.-]+$#', $audioPath)) { http_response_code(400); echo json_encode(['error' => 'ongeldig audiobestand pad']); exit; }
@@ -329,8 +393,14 @@ if ($route === 'upload' && $method === 'POST') {
         if ($hasAudioFile)  @unlink($targetAudioPath);
         http_response_code(500); echo json_encode(['error' => 'database prepare failed']); exit;
     }
+<<<<<<< HEAD
     $stmt->bind_param("sssisssi", $type, $naam, $beschrijving, $framePlaatsId, $finalImageUrl, $finalAudioPath, $auteur, $frameless);
     $ok    = $stmt->execute();
+=======
+
+    $stmt->bind_param("sssisssi", $type, $naam, $beschrijving, $framePlaatsId, $finalImageUrl, $finalAudioPath, $auteur, $frameless);
+    $ok = $stmt->execute();
+>>>>>>> 32f7b41b87c721e6c2a5abe5eb5915edefe1ec58
     $newId = $stmt->insert_id;
     $stmtError = $stmt->error;
     $stmt->close();
@@ -357,6 +427,7 @@ if ($route === 'upload' && $method === 'POST') {
     exit;
 }
 
+<<<<<<< HEAD
 // ---- PATCH (bijwerken kunstwerk) ----
 if (($method === 'PATCH' || $method === 'POST') && $route === 'items' && isset($url[1]) && ctype_digit(trim($url[1]))) {
     $id = (int)$url[1];
@@ -445,12 +516,42 @@ if ($method === 'DELETE' && $route !== '' && ctype_digit($route) && (int)$route 
 
     if (!$ok)         { http_response_code(500); echo json_encode(['error' => 'delete failed']); exit; }
     if ($affected === 0) { http_response_code(404); echo json_encode(['error' => 'niet gevonden']); exit; }
+=======
+if ($method === 'DELETE' && $route !== '' && ctype_digit($route) && (int)$route > 0) {
+    $id = (int)$route;
+    $stmt = $conn->prepare("DELETE FROM `Kunstwerken` WHERE `Id` = ?");
+    if (!$stmt) {
+        http_response_code(500);
+        echo json_encode(['error' => 'database prepare failed']);
+        exit;
+    }
+    $stmt->bind_param("i", $id);
+    $ok = $stmt->execute();
+    $affected = $stmt->affected_rows;
+    $stmt->close();
+
+    if (!$ok) {
+        http_response_code(500);
+        echo json_encode(['error' => 'delete failed']);
+        exit;
+    }
+    if ($affected === 0) {
+        http_response_code(404);
+        echo json_encode(['error' => 'niet gevonden']);
+        exit;
+    }
+>>>>>>> 32f7b41b87c721e6c2a5abe5eb5915edefe1ec58
     echo json_encode(['deleted' => $id]);
     exit;
 }
 
+<<<<<<< HEAD
 // ---- GET enkel kunstwerk ----
 if ($route !== '' && ctype_digit($route) && (int)$route > 0) {
+=======
+// -------------------- Overige GET-routes (bestaand) --------------------
+if ($route !== '' && ctype_digit($route) && (int) $route > 0) {
+>>>>>>> 32f7b41b87c721e6c2a5abe5eb5915edefe1ec58
     if (isset($url[1])) {
         $allowedColumns = ['Id', 'Type', 'Naam', 'Beschrijving', 'ImageUrl', 'Audiopath', 'Auteur', 'FramePlaatsId', 'Frameless'];
         $column = $url[1];

@@ -425,9 +425,9 @@ export default function UploadView({ token, addLog, item: editItem, onSaved, onC
 
         <div className="bg-paper border border-border rounded-[10px] p-4 flex flex-col gap-2.5 flex-1 min-h-0">
           <FieldLabel>Type</FieldLabel>
-          <input value={type} onChange={e => setType(e.target.value)} list="art-types"
-            placeholder="Bijv. Schilderij" className={inputCls} />
-          <datalist id="art-types">{ART_TYPES.map(t => <option key={t} value={t} />)}</datalist>
+          <select value={type} onChange={e => setType(e.target.value)} className={inputCls}>
+            {ART_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
 
           <FieldLabel>Naam</FieldLabel>
           <input value={naam} onChange={e => setNaam(e.target.value)}

@@ -9,6 +9,7 @@ import LogView from "./Log"
 import UploadView from "./Upload"
 import IFramePanel from "./overzicht"
 import "./App.css"
+import { FiTrash2 } from "react-icons/fi"
 
 const navItems = [
   { id: "home", label: "Home", Icon: FiHome },
@@ -102,6 +103,11 @@ export default function App({ token, onLogout, logs, addLog }) {
     setItems(prev => prev.map(it => it.Id === updated.Id ? { ...it, ...updated } : it))
     setPicked(prev => prev?.Id === updated.Id ? { ...prev, ...updated } : prev)
   }, [])
+
+  const handleItemDeleted = useCallback((id) => {
+    setItems(prev => prev.filter(it => it.Id !== id))
+    setPicked(null)           // panel sluiten
+  }, [])                      // setPicked zit in App-scope, dus geen dep nodig
 
   return (
     <div className="flex min-h-screen">
@@ -220,6 +226,7 @@ export default function App({ token, onLogout, logs, addLog }) {
               isMobile={isMobile}
               token={token} addLog={addLog}
               onItemSaved={handleItemSaved}
+              onItemDeleted={handleItemDeleted}   // ← nieuw
             />
           )}
 
@@ -267,7 +274,7 @@ export default function App({ token, onLogout, logs, addLog }) {
   )
 }
 
-function HomeView({ items, loading, err, types, typeFilter, setTypeFilter, picked, setPicked, isMobile, token, addLog, onItemSaved }) {
+function HomeView({ items, loading, err, types, typeFilter, setTypeFilter, picked, setPicked, isMobile, token, addLog, onItemSaved, onItemDeleted}) {
   const editPanelOpen = !!picked
 
   return (
@@ -327,13 +334,16 @@ function HomeView({ items, loading, err, types, typeFilter, setTypeFilter, picke
                 Bewerken — {picked.Naam || "Naamloos"}
               </span>
             </div>
-            <button
-              onClick={() => setPicked(null)}
-              className="w-7 h-7 flex items-center justify-center rounded-md border border-border bg-paper hover:bg-warm-bg text-muted hover:text-ink cursor-pointer"
-            >
-              <FiX size={13} />
-            </button>
-          </div>
+            <div className="flex items-center gap-1.5">
+              <DeleteButton item={picked} token={token} addLog={addLog} onDeleted={onItemDeleted} />
+              <button
+                onClick={() => setPicked(null)}
+                className="w-7 h-7 flex items-center justify-center rounded-md border border-border bg-paper hover:bg-warm-bg text-muted hover:text-ink cursor-pointer"
+              >
+                <FiX size={13} />
+              </button>
+            </div>
+        </div>
 
           <UploadView
             key={picked.Id}
@@ -346,6 +356,53 @@ function HomeView({ items, loading, err, types, typeFilter, setTypeFilter, picke
         </div>
       )}
     </div>
+  )
+}
+
+function DeleteButton({ item, token, addLog, onDeleted }) {
+  const [confirming, setConfirming] = useState(false)
+  const [deleting,   setDeleting]   = useState(false)
+
+  const handleDelete = async () => {
+    setDeleting(true)
+    try {
+      const res = await apiFetch(`/${item.Id}`, { method: "DELETE" })
+      if (res.status === 401) throw new Error("Sessie verlopen.")
+      if (!res.ok) {
+        const p = await res.json().catch(() => ({}))
+        throw new Error(p.error || "Verwijderen mislukt.")
+      }
+      addLog?.(`Verwijderd: ${item.Naam}`, "warning")
+      onDeleted(item.Id)
+    } catch (e) {
+      addLog?.(`Fout: ${e.message}`, "error")
+      setConfirming(false)
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  if (confirming) {
+    return (
+      <div className="flex items-center gap-1.5">
+        <span className="font-body text-[11px] text-red-500">Zeker weten?</span>
+        <button onClick={handleDelete} disabled={deleting}
+          className="px-2.5 py-1 rounded-md bg-red-500 text-white font-body text-[11px] border-none cursor-pointer hover:bg-red-600 disabled:opacity-50">
+          {deleting ? "…" : "Ja, verwijder"}
+        </button>
+        <button onClick={() => setConfirming(false)}
+          className="px-2.5 py-1 rounded-md border border-border bg-paper font-body text-[11px] text-muted hover:text-ink cursor-pointer">
+          Annuleren
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <button onClick={() => setConfirming(true)}
+      className="w-7 h-7 flex items-center justify-center rounded-md border border-border bg-paper hover:bg-red-50 hover:border-red-200 text-muted hover:text-red-500 cursor-pointer">
+      <FiTrash2 size={13} />
+    </button>
   )
 }
 
