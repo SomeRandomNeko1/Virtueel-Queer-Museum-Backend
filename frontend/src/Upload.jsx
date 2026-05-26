@@ -302,10 +302,13 @@ export default function UploadView({ token, addLog, item: editItem, onSaved, onC
       if (audioFile) data.append("audio",      audioFile)
 
       const url    = isEdit ? `${API}/items/${editItem.Id}` : `${API}/upload`
-      const method = isEdit ? "PATCH" : "POST"
-     
+      const method = "POST" // Gebruik altijd POST, ongeacht edit of create
 
-      const res = await fetch(url, { method, headers: { Authorization: `Bearer ${token}` }, body: data })
+      const res = await fetch(url, { 
+          method, 
+          headers: { Authorization: `Bearer ${token}` }, 
+          body: data 
+      })
       const payload = await res.json().catch(() => ({}))
       if (res.status === 401) throw new Error("Sessie verlopen.")
       if (!res.ok) throw new Error(payload.error || "Opslaan mislukt.")
