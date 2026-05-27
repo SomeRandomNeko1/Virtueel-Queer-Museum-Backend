@@ -173,7 +173,6 @@ $method = $_SERVER['REQUEST_METHOD'];
 // Methode-check: sta GET, POST (upload), PATCH, DELETE toe
 if ($method !== 'GET'
     && !($method === 'POST' && $route === 'upload')
-    && !($method === 'POST' && $route === 'items' && isset($url[1])) // <-- Toevoegen
     && $method !== 'PATCH'
     && $method !== 'DELETE'
 ) {
@@ -289,16 +288,9 @@ if ($route === 'upload' && $method === 'POST') {
         $uploadDir = getUploadStorageDir();
         if (!is_dir($uploadDir) && !mkdir($uploadDir, 0775, true)) { http_response_code(500); echo json_encode(['error' => 'kon uploadmap niet maken']); exit; }
         $safeFileName = bin2hex(random_bytes(16)) . '.' . $allowedMimes[$mimeType];
-        $targetPath = $uploadDir . '/' . $safeFileName;
-
-        if (!move_uploaded_file($file['tmp_name'], $targetPath)) {
-            http_response_code(500);
-            echo json_encode(['error' => 'kon bestand niet opslaan']);
-            exit;
-        }
-
+        $targetPath   = $uploadDir . '/' . $safeFileName;
+        if (!move_uploaded_file($file['tmp_name'], $targetPath)) { http_response_code(500); echo json_encode(['error' => 'kon bestand niet opslaan']); exit; }
         $finalImageUrl = $UPLOAD_BASE_URL . '/uploads/' . $safeFileName;
-        $uploadedImageTmp = $targetPath;
     } elseif ($imageUrl !== '') {
         if (!filter_var($imageUrl, FILTER_VALIDATE_URL)) { http_response_code(400); echo json_encode(['error' => 'ongeldige ImageUrl']); exit; }
         if (mb_strlen($imageUrl) > 500) { http_response_code(400); echo json_encode(['error' => 'ImageUrl is te lang']); exit; }
@@ -365,7 +357,7 @@ if ($route === 'upload' && $method === 'POST') {
 }
 
 // ---- PATCH (bijwerken kunstwerk) ----
-if (($method === 'PATCH' || $method === 'POST') && $route === 'items' && isset($url[1]) && ctype_digit(trim($url[1]))) {
+if ($method === 'PATCH' && $route === 'items' && isset($url[1]) && ctype_digit(trim($url[1]))) {
     $id = (int)$url[1];
 
     $naam             = trim((string) ($_POST['naam']         ?? $_POST['Naam']         ?? ''));
