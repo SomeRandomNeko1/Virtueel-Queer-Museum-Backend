@@ -87,7 +87,10 @@ function getUploadStorageDir(): string {
 
 function serveUploadedFile(string $fileName): void
 {
+    header_remove("Access-Control-Allow-Origin"); 
     header("Access-Control-Allow-Origin: *");
+    header("Access-Control-Allow-Methods: GET, OPTIONS");
+    header("Access-Control-Allow-Headers: Content-Type, Authorization");
 
     // Afbeeldingen én audiobestanden toestaan
     if (!preg_match('/^[a-f0-9]{32}\.(jpg|jpeg|png|webp|mp3|ogg|wav|m4a)$/i', $fileName)) {
@@ -172,7 +175,7 @@ $method = $_SERVER['REQUEST_METHOD'];
 
 // Methode-check: sta GET, POST (upload), PATCH, DELETE toe
 if ($method !== 'GET'
-    && !($method === 'POST' && $route === 'upload')
+    && !($method === 'POST' && ($route === 'upload' || $route === 'items')) 
     && $method !== 'PATCH'
     && $method !== 'DELETE'
 ) {
@@ -357,7 +360,7 @@ if ($route === 'upload' && $method === 'POST') {
 }
 
 // ---- PATCH (bijwerken kunstwerk) ----
-if ($method === 'PATCH' && $route === 'items' && isset($url[1]) && ctype_digit(trim($url[1]))) {
+if (($method === 'POST' || $method === 'PATCH') && $route === 'items' && isset($url[1]) && ctype_digit(trim($url[1]))){
     $id = (int)$url[1];
 
     $naam             = trim((string) ($_POST['naam']         ?? $_POST['Naam']         ?? ''));

@@ -1,18 +1,23 @@
-FROM node:20-alpine
+FROM php:8.2-apache
 
-WORKDIR /app
+RUN docker-php-ext-install pdo pdo_mysql mysqli
 
-# Copy package files first to leverage Docker caching
-COPY package*.json ./
+RUN a2enmod rewrite
 
-# Install dependencies (including your devDependencies like tailwind)
-RUN npm install
+RUN { \
+	echo 'file_uploads=On'; \
+	echo 'upload_max_filesize=50M'; \
+	echo 'post_max_size=60M'; \
+	echo 'max_file_uploads=20'; \
+} > /usr/local/etc/php/conf.d/uploads.ini
 
-# Copy the rest of your frontend code
-COPY . .
+RUN a2enmod headers
+RUN sed -i '/<Directory \/var\/www\/>/,/<\/Directory>/ s/AllowOverride None/AllowOverride All/' /etc/apache2/apache2.conf
 
-# Expose the Vite default port
-EXPOSE 5173
-
-# Run the dev server
-CMD ["npx", "vite", "--host"]
+RUN echo '<Directory "/var/www/html">\n\
+    Header set Access-Control-Allow-Origin "*"\n\
+    Header set Access-Control-Allow-Methods "GET, POST, OPTIONS, DELETE, PUT"\n\
+    Header set Access-Control-Allow-Headers "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization"\n\
+    Header set Access-Control-Expose-Headers "Content-Length,Content-Range"\n\
+</Directory>' >> /etc/apache2/conf-available/cors.conf \
+    && a2enconf cors

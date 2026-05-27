@@ -13,8 +13,10 @@ const ART_TYPES = ["Schilderij", "Beeldhouwwerk", "Fotografie", "Illustratie", "
 ───────────────────────────────────────────────────────────────────────── */
 function toWallKey(plaatsNr) {
   if (plaatsNr <= 3) return "back"
-  if (plaatsNr <= 6) return "left"
-  return "right"
+  // Als je de kamer binnenkomt is de muur aan de linkerhand 
+  // blijkbaar gekoppeld aan 7, 8, 9 in de database
+  if (plaatsNr <= 6) return "right" 
+  return "left"
 }
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -28,12 +30,15 @@ function toWallKey(plaatsNr) {
 function RoomPicker({ frames, selected, onSelect, artImg }) {
   const [activeWall, setActiveWall] = useState("back")
 
-  // Group frames by wall; fall back to sequential distribution if no Muur field
+  // Groepeer frames op basis van de nieuwe toWallKey
   const grouped = { back: [], left: [], right: [] }
   frames.forEach(f => {
-    grouped[toWallKey(f.PlaatsNr)].push(f)
+    const key = toWallKey(f.PlaatsNr)
+    grouped[key].push(f)
   })
 
+  // We houden de visuele volgorde van de muren hetzelfde: 
+  // [Links] [Achter] [Rechts]
   const WALLS = [
     { key: "left", label: "Links" },
     { key: "back", label: "Achter" },
