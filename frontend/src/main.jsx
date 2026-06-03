@@ -1,70 +1,52 @@
-import { useState } from "react"
+import { useState, useCallback } from "react"
 import { createRoot } from "react-dom/client"
 import App from "./App"
 import Login from "./Login"
 import "./App.css"
 
-const LOG_STORAGE_KEY = "activityLog"
-
-// crypto.randomUUID() requires a secure context (HTTPS / localhost).
-// When running on a plain HTTP local-IP address we fall back to a
-// simple time+random string that is unique enough for UI log entries.
-function generateId() {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-    return crypto.randomUUID()
-  }
-  // fallback: 8-char hex timestamp + 8-char random hex
-  return (
-    Date.now().toString(16).padStart(12, "0") +
-    Math.floor(Math.random() * 0xffffffff).toString(16).padStart(8, "0")
-  )
-}
+const API = "http://10.120.5.132:8000"
 
 function Root() {
   const [token, setToken] = useState(() => localStorage.getItem("cms_token"))
-  const [logs, setLogs] = useState(() => {
-    try {
-      const stored = sessionStorage.getItem(LOG_STORAGE_KEY)
-      return stored ? JSON.parse(stored) : []
-    } catch {
-      return []
-    }
-  })
 
-  function addLog(message, status = "info") {
-    const entry = {
-      id: generateId(),
-      message,
-      status,
-      at: new Date().toISOString(),
-    }
-    setLogs(prev => {
-      const updated = [entry, ...prev].slice(0, 100)
-      sessionStorage.setItem(LOG_STORAGE_KEY, JSON.stringify(updated))
-      return updated
+  const addLog = useCallback((message, status = "info") => {
+    const currentToken = localStorage.getItem("cms_token")
+    if (!currentToken) return
+
+    fetch(`${API}/logs`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${currentToken}`,
+      },
+      body: JSON.stringify({ message, status }),
+    }).catch(() => {
+      // Stille fout — log schrijven mag nooit de UI breken
     })
-  }
+  }, [])
 
   function handleLogin(newToken) {
     setToken(newToken)
-    addLog("Ingelogd", "success")
+    // Login log wordt al door PHP geschreven via de auth route
   }
 
   function handleLogout() {
-    localStorage.removeItem("cms_token")
-    setToken(null)
     addLog("Uitgelogd", "info")
+    // Kleine vertraging zodat het log-request nog verstuurd wordt
+    setTimeout(() => {
+      localStorage.removeItem("cms_token")
+      setToken(null)
+    }, 100)
   }
 
   if (!token) {
-    return <Login onLogin={handleLogin} addLog={addLog} />
+    return <Login onLogin={handleLogin} />
   }
 
   return (
     <App
       token={token}
       onLogout={handleLogout}
-      logs={logs}
       addLog={addLog}
     />
   )

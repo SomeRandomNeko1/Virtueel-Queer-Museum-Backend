@@ -19,7 +19,7 @@ const navItems = [
   { id: "settings", label: "Instellingen", Icon: FiSettings },
 ]
 
-export default function App({ token, onLogout, logs, addLog }) {
+export default function App({ token, onLogout, addLog }) {
   const logoutTimerRef = useRef(null)
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
 
@@ -237,7 +237,7 @@ export default function App({ token, onLogout, logs, addLog }) {
           )}
 
           {page === "upload" && <UploadView token={token} addLog={addLog} />}
-          {page === "log" && <LogView logs={logs} />}
+          {page === "log" && <LogView token={token} />}
           {page === "settings" && (
             <div className="flex items-center justify-center mt-20 text-muted text-[14px] italic">
               <p>Instellingen nog niet beschikbaar</p>

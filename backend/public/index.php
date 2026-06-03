@@ -154,6 +154,7 @@ if ($route === 'users' && $method === 'POST') {
         $tokenParts = explode(".", $token);
         if (count($tokenParts) !== 3) {
             http_response_code(401);
+            addLogEntry($conn, "Mislukte inlogpoging: {$username}", 'error', null);
             echo json_encode(['error' => 'Token vereist om gebruikers toe te voegen']);
             exit;
         }
@@ -233,6 +234,7 @@ if ($route === 'users' && $method === 'POST') {
         'id'       => $insertId,
         'username' => $username,
     ]);
+    addLogEntry($conn, "Gebruiker aangemaakt: {$username}", 'success', $hasUsers ? ($decodedPayload['sub'] ?? null) : $username);
     exit;
 }
 
@@ -292,6 +294,7 @@ if ($route === "auth") {
         'token'    => $jwt,
         'username' => $user['Username'],
     ]);
+    addLogEntry($conn, "Ingelogd: {$user['Username']}", 'success', $user['Username']);
     exit;
 }
 
@@ -354,6 +357,7 @@ if ($route === 'users' && $method === 'DELETE' && isset($url[1]) && ctype_digit(
         'deleted'  => $deleteId,
         'username' => $targetUser['Username'],
     ]);
+    addLogEntry($conn, "Gebruiker verwijderd: {$targetUser['Username']}", 'success', $authedUsername);
     exit;
 }
 
@@ -511,6 +515,7 @@ if ($route === 'upload' && $method === 'POST') {
         'Auteur'        => $auteur,
         'Frameless'     => $frameless,
     ]);
+    addLogEntry($conn, "Kunstwerk toegevoegd: {$naam}", 'success', $authedUsername);
     exit;
 }
 
@@ -602,6 +607,7 @@ if (($method === 'POST' || $method === 'PATCH') && $route === 'items' && isset($
     if (!$ok) { http_response_code(500); echo json_encode(['error' => 'update failed']); exit; }
 
     echo json_encode(['updated' => $id]);
+    addLogEntry($conn, "Kunstwerk bijgewerkt: {$naam} (ID: {$id})", 'success', $authedUsername);
     exit;
 }
 
@@ -618,8 +624,80 @@ if ($method === 'DELETE' && $route !== '' && ctype_digit($route) && (int)$route 
     if (!$ok)         { http_response_code(500); echo json_encode(['error' => 'delete failed']); exit; }
     if ($affected === 0) { http_response_code(404); echo json_encode(['error' => 'niet gevonden']); exit; }
     echo json_encode(['deleted' => $id]);
+    addLogEntry($conn, "Kunstwerk verwijderd (ID: {$id})", 'success', $authedUsername);
     exit;
 }
+
+// Dit draait automatisch bij elke GET /logs request
+function cleanupOldLogs(mysqli $conn): void {
+    $conn->query("DELETE FROM `Logs` WHERE `CreatedAt` < DATE_SUB(NOW(), INTERVAL 30 DAY)");
+}
+
+// ---- LOG HELPER (herbruikbaar in andere routes) ----
+function addLogEntry(mysqli $conn, string $message, string $status = 'info', ?string $username = null): void {
+    $stmt = $conn->prepare("INSERT INTO `Logs` (`Message`, `Status`, `Username`) VALUES (?, ?, ?)");
+    if (!$stmt) return;
+    $stmt->bind_param("sss", $message, $status, $username);
+    $stmt->execute();
+    $stmt->close();
+}
+
+// ---- LOGS LIST (GET /logs) ----
+if ($route === 'logs' && $method === 'GET') {
+    // Ruim oude logs op bij elk ophaalverzoek
+    cleanupOldLogs($conn);
+
+    // Optioneel: limit parameter (?limit=50)
+    $limit = 100;
+    if (isset($_GET['limit']) && ctype_digit($_GET['limit']) && (int)$_GET['limit'] > 0 && (int)$_GET['limit'] <= 500) {
+        $limit = (int)$_GET['limit'];
+    }
+
+    $stmt = $conn->prepare("SELECT `LogId`, `Message`, `Status`, `Username`, `CreatedAt` FROM `Logs` ORDER BY `CreatedAt` DESC LIMIT ?");
+    $stmt->bind_param("i", $limit);
+    $stmt->execute();
+    echo json_encode($stmt->get_result()->fetch_all(MYSQLI_ASSOC));
+    $stmt->close();
+    exit;
+}
+
+// ---- LOG CREATE (POST /logs) ----
+if ($route === 'logs' && $method === 'POST') {
+    $data    = readJsonBody();
+    $message = trim((string) ($data['message'] ?? ''));
+    $status  = trim((string) ($data['status']  ?? 'info'));
+
+    if ($message === '') {
+        http_response_code(400);
+        echo json_encode(['error' => 'message is verplicht']);
+        exit;
+    }
+    if (mb_strlen($message) > 500) {
+        http_response_code(400);
+        echo json_encode(['error' => 'message is te lang (max 500 tekens)']);
+        exit;
+    }
+    if (!in_array($status, ['success', 'error', 'info'], true)) {
+        $status = 'info';
+    }
+
+    // Gebruik de ingelogde username uit het token
+    $logUsername = $authedUsername ?: null;
+
+    addLogEntry($conn, $message, $status, $logUsername);
+
+    http_response_code(201);
+    echo json_encode(['message' => 'Log opgeslagen']);
+    exit;
+}
+
+// ---- LOGS DELETE ALL (DELETE /logs) ----
+if ($route === 'logs' && $method === 'DELETE') {
+    $conn->query("DELETE FROM `Logs`");
+    echo json_encode(['message' => 'Alle logs verwijderd']);
+    exit;
+}
+
 
 // ---- GET enkel kunstwerk ----
 if ($route !== '' && ctype_digit($route) && (int)$route > 0) {
