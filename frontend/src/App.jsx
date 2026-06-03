@@ -1,13 +1,14 @@
 import { useState, useEffect, useCallback, useRef } from "react"
 import {
   FiHome, FiList, FiSettings, FiSearch, FiX, FiImage,
-  FiChevronDown, FiLogOut, FiUser, FiUpload, FiGrid, FiEdit2
+  FiChevronDown, FiLogOut, FiUser, FiUpload, FiGrid, FiEdit2 ,FiBook
 } from "react-icons/fi"
 import { setLogoutCallback, apiFetch, decodeToken } from "./api"
 import NotifBell from "./NotifBell"
 import LogView from "./Log"
 import UploadView from "./Upload"
 import IFramePanel from "./overzicht"
+import Gastenboek from "./Gastenboek"
 import "./App.css"
 import { FiTrash2 } from "react-icons/fi"
 
@@ -15,6 +16,7 @@ const navItems = [
   { id: "home", label: "Home", Icon: FiHome },
   { id: "overzicht", label: "Overzicht", Icon: FiGrid },
   { id: "upload", label: "Upload", Icon: FiUpload },
+  { id: "gastenboek", label: "Gastenboek", Icon: FiBook },
   { id: "log", label: "Log", Icon: FiList },
   { id: "settings", label: "Instellingen", Icon: FiSettings },
 ]
@@ -238,6 +240,7 @@ export default function App({ token, onLogout, addLog }) {
 
           {page === "upload" && <UploadView token={token} addLog={addLog} />}
           {page === "log" && <LogView token={token} />}
+          {page === "gastenboek"  && <Gastenboek token={token} addLog={addLog} />}
           {page === "settings" && (
             <div className="flex items-center justify-center mt-20 text-muted text-[14px] italic">
               <p>Instellingen nog niet beschikbaar</p>
