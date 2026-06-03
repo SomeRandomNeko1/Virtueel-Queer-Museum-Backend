@@ -320,9 +320,73 @@ if ($route === 'users' && $method === 'POST') {
     exit;
 }
 
+if ($route === 'gastenboek' && $method === 'POST' && !isset($url[1])) {
+    require_once dirname(__DIR__) . "/src/connection.php";
+
+    $data    = readJsonBody();
+    $naam    = trim((string) ($data['naam']    ?? $data['Naam']    ?? ''));
+    $sterren = (int) ($data['sterren']         ?? $data['Sterren'] ?? 0);
+    $bericht = trim((string) ($data['bericht'] ?? $data['Bericht'] ?? ''));
+
+    if ($naam === '') {
+        http_response_code(400);
+        echo json_encode(['error' => 'Naam is verplicht']);
+        exit;
+    }
+    if (mb_strlen($naam) > 100) {
+        http_response_code(400);
+        echo json_encode(['error' => 'Naam is te lang (max 100 tekens)']);
+        exit;
+    }
+    if ($sterren < 1 || $sterren > 5) {
+        http_response_code(400);
+        echo json_encode(['error' => 'Sterren moet tussen 1 en 5 zijn']);
+        exit;
+    }
+    if ($bericht === '') {
+        http_response_code(400);
+        echo json_encode(['error' => 'Bericht is verplicht']);
+        exit;
+    }
+    if (mb_strlen($bericht) > 2000) {
+        http_response_code(400);
+        echo json_encode(['error' => 'Bericht is te lang (max 2000 tekens)']);
+        exit;
+    }
+
+    $stmt = $conn->prepare("INSERT INTO `Gastenboek` (`Naam`, `Sterren`, `Bericht`) VALUES (?, ?, ?)");
+    if (!$stmt) {
+        http_response_code(500);
+        echo json_encode(['error' => 'database fout']);
+        exit;
+    }
+
+    $stmt->bind_param("sis", $naam, $sterren, $bericht);
+    $ok       = $stmt->execute();
+    $insertId = $stmt->insert_id;
+    $stmt->close();
+
+    if (!$ok) {
+        http_response_code(500);
+        echo json_encode(['error' => 'kon bericht niet opslaan']);
+        exit;
+    }
+
+    addLogEntry($conn, "Gastenboek: nieuw bericht van {$naam} ({$sterren}★)", 'success', null);
+
+    http_response_code(201);
+    echo json_encode([
+        'GastenboekId' => $insertId,
+        'Naam'         => $naam,
+        'Sterren'      => $sterren,
+        'Bericht'      => $bericht,
+    ]);
+    exit;
+}
+
 // ---- METHODE CHECK ----
 if ($method !== 'GET'
-    && !($method === 'POST' && in_array($route, ['upload', 'items', 'users', 'logs']))
+    && !($method === 'POST' && in_array($route, ['upload', 'items', 'users', 'logs', 'gastenboek']))
     && $method !== 'PATCH'
     && $method !== 'DELETE'
 ) {
@@ -484,6 +548,230 @@ if ($route === 'logs' && $method === 'DELETE' && !isset($url[1])) {
     $conn->query("DELETE FROM `Logs`");
     addLogEntry($conn, "Alle logs gewist", 'info', $authedUsername);
     echo json_encode(['message' => 'Alle logs verwijderd']);
+    exit;
+}
+
+// ---- GASTENBOEK LIST (GET /gastenboek) ----
+if ($route === 'gastenboek' && $method === 'GET') {
+
+    // Optioneel: ?sort=asc of ?sort=desc (standaard nieuwste eerst)
+    $sortDir = 'DESC';
+    if (isset($_GET['sort']) && strtolower($_GET['sort']) === 'asc') {
+        $sortDir = 'ASC';
+    }
+
+    // Optioneel: ?limit=50
+    $limit = 100;
+    if (isset($_GET['limit']) && ctype_digit($_GET['limit']) && (int)$_GET['limit'] > 0 && (int)$_GET['limit'] <= 500) {
+        $limit = (int)$_GET['limit'];
+    }
+
+    $stmt = $conn->prepare("SELECT `GastenboekId`, `Naam`, `Sterren`, `Bericht`, `CreatedAt`, `UpdatedAt` FROM `Gastenboek` ORDER BY `CreatedAt` $sortDir LIMIT ?");
+    $stmt->bind_param("i", $limit);
+    $stmt->execute();
+    echo json_encode($stmt->get_result()->fetch_all(MYSQLI_ASSOC));
+    $stmt->close();
+    exit;
+}
+
+// ---- GASTENBOEK SINGLE (GET /gastenboek/{id}) ----
+if ($route === 'gastenboek' && $method === 'GET' && isset($url[1]) && ctype_digit(trim($url[1]))) {
+    $id   = (int) $url[1];
+    $stmt = $conn->prepare("SELECT `GastenboekId`, `Naam`, `Sterren`, `Bericht`, `CreatedAt`, `UpdatedAt` FROM `Gastenboek` WHERE `GastenboekId` = ?");
+    $stmt->bind_param("i", $id);
+    $stmt->execute();
+    $result = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+
+    if (!$result) {
+        http_response_code(404);
+        echo json_encode(['error' => 'Bericht niet gevonden']);
+        exit;
+    }
+
+    echo json_encode($result);
+    exit;
+}
+
+// ---- GASTENBOEK CREATE (POST /gastenboek) — GEEN token nodig ----
+if ($route === 'gastenboek' && $method === 'POST' && !isset($url[1])) {
+    $data    = readJsonBody();
+    $naam    = trim((string) ($data['naam']    ?? $data['Naam']    ?? ''));
+    $sterren = (int) ($data['sterren']         ?? $data['Sterren'] ?? 0);
+    $bericht = trim((string) ($data['bericht'] ?? $data['Bericht'] ?? ''));
+
+    // Validatie
+    if ($naam === '') {
+        http_response_code(400);
+        echo json_encode(['error' => 'Naam is verplicht']);
+        exit;
+    }
+    if (mb_strlen($naam) > 100) {
+        http_response_code(400);
+        echo json_encode(['error' => 'Naam is te lang (max 100 tekens)']);
+        exit;
+    }
+    if ($sterren < 1 || $sterren > 5) {
+        http_response_code(400);
+        echo json_encode(['error' => 'Sterren moet tussen 1 en 5 zijn']);
+        exit;
+    }
+    if ($bericht === '') {
+        http_response_code(400);
+        echo json_encode(['error' => 'Bericht is verplicht']);
+        exit;
+    }
+    if (mb_strlen($bericht) > 2000) {
+        http_response_code(400);
+        echo json_encode(['error' => 'Bericht is te lang (max 2000 tekens)']);
+        exit;
+    }
+
+    $stmt = $conn->prepare("INSERT INTO `Gastenboek` (`Naam`, `Sterren`, `Bericht`) VALUES (?, ?, ?)");
+    if (!$stmt) {
+        http_response_code(500);
+        echo json_encode(['error' => 'database fout']);
+        exit;
+    }
+
+    $stmt->bind_param("sis", $naam, $sterren, $bericht);
+    $ok       = $stmt->execute();
+    $insertId = $stmt->insert_id;
+    $stmt->close();
+
+    if (!$ok) {
+        http_response_code(500);
+        echo json_encode(['error' => 'kon bericht niet opslaan']);
+        exit;
+    }
+
+    addLogEntry($conn, "Gastenboek: nieuw bericht van {$naam} ({$sterren}★)", 'success', null);
+
+    http_response_code(201);
+    echo json_encode([
+        'GastenboekId' => $insertId,
+        'Naam'         => $naam,
+        'Sterren'      => $sterren,
+        'Bericht'      => $bericht,
+    ]);
+    exit;
+}
+
+// ---- GASTENBOEK UPDATE (PATCH/POST /gastenboek/{id}) — token vereist ----
+if (($method === 'PATCH' || $method === 'POST') && $route === 'gastenboek' && isset($url[1]) && ctype_digit(trim($url[1]))) {
+    $id   = (int) $url[1];
+    $data = readJsonBody();
+
+    // Haal het huidige bericht op
+    $stmt = $conn->prepare("SELECT `GastenboekId` FROM `Gastenboek` WHERE `GastenboekId` = ?");
+    $stmt->bind_param("i", $id);
+    $stmt->execute();
+    $exists = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+
+    if (!$exists) {
+        http_response_code(404);
+        echo json_encode(['error' => 'Bericht niet gevonden']);
+        exit;
+    }
+
+    // Bouw dynamische update
+    $sets   = [];
+    $params = [];
+    $types  = "";
+
+    if (isset($data['naam']) || isset($data['Naam'])) {
+        $naam = trim((string) ($data['naam'] ?? $data['Naam']));
+        if ($naam === '' || mb_strlen($naam) > 100) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Ongeldige naam']);
+            exit;
+        }
+        $sets[]   = "`Naam`=?";
+        $params[] = $naam;
+        $types   .= "s";
+    }
+
+    if (isset($data['sterren']) || isset($data['Sterren'])) {
+        $sterren = (int) ($data['sterren'] ?? $data['Sterren']);
+        if ($sterren < 1 || $sterren > 5) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Sterren moet tussen 1 en 5 zijn']);
+            exit;
+        }
+        $sets[]   = "`Sterren`=?";
+        $params[] = $sterren;
+        $types   .= "i";
+    }
+
+    if (isset($data['bericht']) || isset($data['Bericht'])) {
+        $bericht = trim((string) ($data['bericht'] ?? $data['Bericht']));
+        if ($bericht === '' || mb_strlen($bericht) > 2000) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Ongeldig bericht']);
+            exit;
+        }
+        $sets[]   = "`Bericht`=?";
+        $params[] = $bericht;
+        $types   .= "s";
+    }
+
+    if (empty($sets)) {
+        http_response_code(400);
+        echo json_encode(['error' => 'Geen velden om bij te werken']);
+        exit;
+    }
+
+    $params[] = $id;
+    $types   .= "i";
+
+    $sql  = "UPDATE `Gastenboek` SET " . implode(", ", $sets) . " WHERE `GastenboekId`=?";
+    $stmt = $conn->prepare($sql);
+    if (!$stmt) {
+        http_response_code(500);
+        echo json_encode(['error' => 'database fout']);
+        exit;
+    }
+    $stmt->bind_param($types, ...$params);
+    $ok = $stmt->execute();
+    $stmt->close();
+
+    if (!$ok) {
+        http_response_code(500);
+        echo json_encode(['error' => 'update mislukt']);
+        exit;
+    }
+
+    addLogEntry($conn, "Gastenboek bijgewerkt (ID: {$id})", 'success', $authedUsername);
+
+    echo json_encode(['updated' => $id]);
+    exit;
+}
+
+// ---- GASTENBOEK DELETE (DELETE /gastenboek/{id}) — token vereist ----
+if ($method === 'DELETE' && $route === 'gastenboek' && isset($url[1]) && ctype_digit(trim($url[1]))) {
+    $id = (int) $url[1];
+
+    $stmt = $conn->prepare("DELETE FROM `Gastenboek` WHERE `GastenboekId` = ?");
+    $stmt->bind_param("i", $id);
+    $ok       = $stmt->execute();
+    $affected = $stmt->affected_rows;
+    $stmt->close();
+
+    if (!$ok) {
+        http_response_code(500);
+        echo json_encode(['error' => 'verwijderen mislukt']);
+        exit;
+    }
+    if ($affected === 0) {
+        http_response_code(404);
+        echo json_encode(['error' => 'Bericht niet gevonden']);
+        exit;
+    }
+
+    addLogEntry($conn, "Gastenboek verwijderd (ID: {$id})", 'success', $authedUsername);
+
+    echo json_encode(['deleted' => $id]);
     exit;
 }
 
