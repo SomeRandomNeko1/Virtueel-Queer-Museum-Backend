@@ -1,44 +1,25 @@
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useMemo } from "react"
 import { FiImage, FiMusic, FiX, FiCheck, FiUpload, FiEdit2, FiAlertCircle } from "react-icons/fi"
 import { apiFetch } from "./api"
 
-const API = "http://10.120.5.132:8000" //this must be changed due to idk what happend in that stupid POS pc
+const API = "http://10.120.5.132:8000" // this must be changed due to idk what happend in that stupid POS pc
 const ART_TYPES = ["Schilderij", "Beeldhouwwerk", "Fotografie", "Illustratie", "Installatie", "Overig"]
 
-/* ─────────────────────────────────────────────────────────────────────────
-   Wall normaliser
-   Accepts any casing/language from the DB: muur field can be
-   "achterwand", "back", "achter", "linkerwand", "left", "links",
-   "rechterwand", "right", "rechts"
-───────────────────────────────────────────────────────────────────────── */
 function toWallKey(plaatsNr) {
   if (plaatsNr <= 3) return "back"
-  // Als je de kamer binnenkomt is de muur aan de linkerhand 
-  // blijkbaar gekoppeld aan 7, 8, 9 in de database
-  if (plaatsNr <= 6) return "right" 
+  if (plaatsNr <= 6) return "right"
   return "left"
 }
 
-/* ─────────────────────────────────────────────────────────────────────────
-   RoomPicker
-   Props:
-     frames    – [{ Id, Naam, Muur?, Positie? }]
-     selected  – currently selected frame Id (or null)
-     onSelect  – (id) => void
-     artImg    – preview URL to show inside selected frame
-───────────────────────────────────────────────────────────────────────── */
-function RoomPicker({ frames, selected, onSelect, artImg }) {
+function RoomPicker({ frames, selected, onSelect, artImg, occupiedFrameIds = new Set() }) {
   const [activeWall, setActiveWall] = useState("back")
 
-  // Groepeer frames op basis van de nieuwe toWallKey
   const grouped = { back: [], left: [], right: [] }
   frames.forEach(f => {
     const key = toWallKey(f.PlaatsNr)
     grouped[key].push(f)
   })
 
-  // We houden de visuele volgorde van de muren hetzelfde: 
-  // [Links] [Achter] [Rechts]
   const WALLS = [
     { key: "left", label: "Links" },
     { key: "back", label: "Achter" },
@@ -47,11 +28,7 @@ function RoomPicker({ frames, selected, onSelect, artImg }) {
 
   return (
     <div className="flex flex-col gap-2 flex-1 min-h-0">
-
-      {/* ── Unfolded room diagram ── */}
       <div className="flex rounded-lg overflow-hidden border border-border shrink-0" style={{ height: "160px" }}>
-
-        {/* Left wall panel */}
         <WallPanel
           wall={WALLS[0]}
           frames={grouped.left}
@@ -62,9 +39,9 @@ function RoomPicker({ frames, selected, onSelect, artImg }) {
           onActivate={() => setActiveWall("left")}
           width="22%"
           perspective="left"
+          occupiedFrameIds={occupiedFrameIds}
         />
 
-        {/* Back wall panel – widest */}
         <WallPanel
           wall={WALLS[1]}
           frames={grouped.back}
@@ -75,9 +52,9 @@ function RoomPicker({ frames, selected, onSelect, artImg }) {
           onActivate={() => setActiveWall("back")}
           width="56%"
           perspective="back"
+          occupiedFrameIds={occupiedFrameIds}
         />
 
-        {/* Right wall panel */}
         <WallPanel
           wall={WALLS[2]}
           frames={grouped.right}
@@ -88,6 +65,7 @@ function RoomPicker({ frames, selected, onSelect, artImg }) {
           onActivate={() => setActiveWall("right")}
           width="22%"
           perspective="right"
+          occupiedFrameIds={occupiedFrameIds}
         />
       </div>
 
@@ -100,30 +78,43 @@ function RoomPicker({ frames, selected, onSelect, artImg }) {
           <div className="grid grid-cols-2 gap-1.5">
             {grouped[activeWall].map(f => {
               const isSelected = selected === f.FramePlaatsId
+              const isOccupied = occupiedFrameIds.has(Number(f.FramePlaatsId))
+
               return (
                 <button
                   key={f.FramePlaatsId}
-                  onClick={() => onSelect(isSelected ? null : f.FramePlaatsId)}
-                  className={`flex items-center gap-2.5 px-3 py-2 rounded-md border font-body text-[12px] font-medium cursor-pointer text-left
-                    ${isSelected
-                      ? "bg-ink text-white border-ink"
-                      : "bg-warm-bg text-muted border-border hover:border-accent hover:text-ink"}`}
+                  onClick={() => !isOccupied && onSelect(isSelected ? null : f.FramePlaatsId)}
+                  disabled={isOccupied}
+                  title={isOccupied ? "Deze positie is al bezet" : `Positie ${f.PlaatsNr}`}
+                  className={`flex items-center gap-2.5 px-3 py-2 rounded-md border font-body text-[12px] font-medium text-left
+                    ${isOccupied
+                      ? "bg-warm-bg text-muted/40 border-border/50 cursor-not-allowed opacity-60"
+                      : isSelected
+                        ? "bg-ink text-white border-ink cursor-pointer"
+                        : "bg-warm-bg text-muted border-border hover:border-accent hover:text-ink cursor-pointer"}`}
                 >
-                  {/* mini frame swatch */}
-                  <div className={`w-7 h-6 rounded shrink-0 border flex items-center justify-center overflow-hidden
-                    ${isSelected ? "border-white/20" : "border-border"}`}
+                  <div
+                    className={`w-7 h-6 rounded shrink-0 border flex items-center justify-center overflow-hidden
+                      ${isSelected ? "border-white/20" : "border-border"}`}
                     style={{ background: "#e8deca" }}
                   >
-                    {artImg
-                      ? <img src={artImg} alt="" className="w-full h-full object-cover opacity-80" />
-                      : <div className="w-3.5 h-3 bg-muted/20 rounded-sm" />
-                    }
+                    {isOccupied ? (
+                      <FiX size={10} className="text-muted/50" />
+                    ) : artImg && isSelected ? (
+                      <img src={artImg} alt="" className="w-full h-full object-cover opacity-80" />
+                    ) : (
+                      <div className="w-3.5 h-3 bg-muted/20 rounded-sm" />
+                    )}
                   </div>
+
                   <div className="min-w-0">
                     <span className="block truncate">Positie {f.PlaatsNr}</span>
-                    <span className="block font-normal text-[10px] opacity-50">#{f.FramePlaatsId}</span>
+                    <span className="block font-normal text-[10px] opacity-50">
+                      {isOccupied ? "bezet" : `#${f.FramePlaatsId}`}
+                    </span>
                   </div>
-                  {isSelected && <FiCheck size={11} className="ml-auto shrink-0" />}
+
+                  {isSelected && !isOccupied && <FiCheck size={11} className="ml-auto shrink-0" />}
                 </button>
               )
             })}
@@ -134,7 +125,18 @@ function RoomPicker({ frames, selected, onSelect, artImg }) {
   )
 }
 
-function WallPanel({ wall, frames, selected, onSelect, artImg, active, onActivate, width, perspective }) {
+function WallPanel({
+  wall,
+  frames,
+  selected,
+  onSelect,
+  artImg,
+  active,
+  onActivate,
+  width,
+  perspective,
+  occupiedFrameIds = new Set(),
+}) {
   const hasSelected = frames.some(f => f.FramePlaatsId === selected)
 
   const skewStyle = perspective === "left"
@@ -166,16 +168,25 @@ function WallPanel({ wall, frames, selected, onSelect, artImg, active, onActivat
         ) : (
           frames.map(f => {
             const isSel = selected === f.FramePlaatsId
+            const isOccupied = occupiedFrameIds.has(Number(f.FramePlaatsId))
+
             return (
               <button
                 key={f.FramePlaatsId}
-                onClick={e => { e.stopPropagation(); onSelect(isSel ? null : f.FramePlaatsId) }}
-                title={`Positie ${f.PlaatsNr}`}
-                className={`relative rounded-sm overflow-hidden cursor-pointer border-none p-0 shrink-0
-                  ${isSel ? "ring-2 ring-ink shadow-md" : "opacity-60 hover:opacity-100"}`}
+                onClick={e => {
+                  e.stopPropagation()
+                  if (!isOccupied) onSelect(isSel ? null : f.FramePlaatsId)
+                }}
+                disabled={isOccupied}
+                title={isOccupied ? "Bezet" : `Positie ${f.PlaatsNr}`}
+                className={`relative rounded-sm overflow-hidden border-none p-0 shrink-0
+                  ${isOccupied
+                    ? "opacity-30 cursor-not-allowed grayscale"
+                    : isSel
+                      ? "ring-2 ring-ink shadow-md cursor-pointer"
+                      : "opacity-60 hover:opacity-100 cursor-pointer"}`}
                 style={{ width: 36, height: 44 }}
               >
-
                 <div className={`absolute inset-0 rounded-sm ${isSel ? "bg-ink/10" : "bg-[#c8b89a]/40"}`} />
                 <div className="absolute inset-0.75 rounded-[1px] overflow-hidden bg-[#e8deca]">
                   {isSel && artImg
@@ -183,6 +194,12 @@ function WallPanel({ wall, frames, selected, onSelect, artImg, active, onActivat
                     : <div className="w-full h-full bg-[#d9cdb8]" />
                   }
                 </div>
+
+                {isOccupied && (
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <FiX size={12} className="text-ink/60" />
+                  </div>
+                )}
 
                 <div className="absolute bottom-0 right-0 bg-black/40 px-0.5 rounded-tl-sm">
                   <span className="font-body text-[8px] text-white leading-none">{f.PlaatsNr}</span>
@@ -198,7 +215,7 @@ function WallPanel({ wall, frames, selected, onSelect, artImg, active, onActivat
   )
 }
 
-export default function UploadView({ token, addLog, item: editItem, onSaved, onCancel }) {
+export default function UploadView({ token, addLog, item: editItem, onSaved, onCancel, items = [] }) {
   const isEdit = !!editItem
 
   const imageRef = useRef(null)
@@ -229,33 +246,48 @@ export default function UploadView({ token, addLog, item: editItem, onSaved, onC
   const [submitError, setSubmitError] = useState(null)
   const [submitted, setSubmitted] = useState(false)
 
+  const occupiedFrameIds = useMemo(() => {
+    return new Set(
+      items
+        .filter(i => i.FramePlaatsId != null && (!isEdit || i.Id !== editItem?.Id))
+        .map(i => Number(i.FramePlaatsId))
+    )
+  }, [items, isEdit, editItem?.Id])
+
   useEffect(() => {
     let cancelled = false
-      ; (async () => {
-        try {
-          const [rK, rF] = await Promise.all([apiFetch("/kamers"), apiFetch("/frames")])
-          const k = await rK.json()
-          const f = await rF.json()
-          if (cancelled) return
-          setKamers(k)
-          setFrames(f)
-          if (editItem?.FramePlaatsId) {
-            const ef = f.find(fr => fr.FramePlaatsId === editItem.FramePlaatsId)
-            if (ef) setKamerId(ef.KamerId)
-          }
-        } catch (e) {
-          if (!cancelled) setMetaError("Kon kamers/frames niet laden.")
-        } finally {
-          if (!cancelled) setLoadingMeta(false)
+    ; (async () => {
+      try {
+        const [rK, rF] = await Promise.all([apiFetch("/kamers"), apiFetch("/frames")])
+        const k = await rK.json()
+        const f = await rF.json()
+        if (cancelled) return
+        setKamers(k)
+        setFrames(f)
+        if (editItem?.FramePlaatsId) {
+          const ef = f.find(fr => fr.FramePlaatsId === editItem.FramePlaatsId)
+          if (ef) setKamerId(ef.KamerId)
         }
-      })()
+      } catch (e) {
+        if (!cancelled) setMetaError("Kon kamers/frames niet laden.")
+      } finally {
+        if (!cancelled) setLoadingMeta(false)
+      }
+    })()
     return () => { cancelled = true }
   }, [editItem?.FramePlaatsId])
 
   const framesInKamer = kamerId ? frames.filter(f => f.KamerId === kamerId) : []
   const selectedKamer = kamers.find(k => k.KamerId === kamerId)
   const selectedFrame = frames.find(f => f.FramePlaatsId === framePlaatsId)
-  const canSubmit = naam.trim() && type && (isEdit || imageFile) && (frameless || framePlaatsId)
+  const selectedFrameOccupied = !frameless && framePlaatsId != null && occupiedFrameIds.has(Number(framePlaatsId))
+  const canSubmit = !!(
+    naam.trim() &&
+    type &&
+    (isEdit || imageFile) &&
+    (frameless || framePlaatsId) &&
+    !selectedFrameOccupied
+  )
 
   const readImage = (f) => {
     if (!f) return
@@ -285,44 +317,72 @@ export default function UploadView({ token, addLog, item: editItem, onSaved, onC
   }
 
   const handleReset = () => {
-    setNaam(""); setType("Schilderij"); setAuteur(""); setBeschrijving("")
-    setFramePlaatsId(null); setFrameless(false); setKamerId(null)
-    setImageFile(null); setImagePreview(null)
-    setAudioFile(null); setAudioName(null)
-    setSubmitted(false); setSubmitError(null)
+    setNaam("")
+    setType("Schilderij")
+    setAuteur("")
+    setBeschrijving("")
+    setFramePlaatsId(null)
+    setFrameless(false)
+    setKamerId(null)
+    setImageFile(null)
+    setImagePreview(null)
+    setAudioFile(null)
+    setAudioName(null)
+    setSubmitted(false)
+    setSubmitError(null)
   }
 
   const handleSubmit = async () => {
+    if (selectedFrameOccupied) {
+      setSubmitError("Deze framepositie is al bezet door een ander kunstwerk.")
+      return
+    }
+
     if (!canSubmit) return
-    setSubmitError(null); setSubmitting(true)
+
+    setSubmitError(null)
+    setSubmitting(true)
+
     try {
       const data = new FormData()
-      data.append("naam",         naam)
-      data.append("Type",         type)
-      data.append("auteur",       auteur)
+      data.append("naam", naam)
+      data.append("Type", type)
+      data.append("auteur", auteur)
       data.append("beschrijving", beschrijving)
-      data.append("frameless",    frameless ? "1" : "0")
+      data.append("frameless", frameless ? "1" : "0")
+
       if (!frameless && framePlaatsId) data.append("framePlaatsId", String(framePlaatsId))
       if (imageFile) data.append("afbeelding", imageFile)
-      if (audioFile) data.append("audio",      audioFile)
+      if (audioFile) data.append("audio", audioFile)
 
-      const url    = isEdit ? `${API}/items/${editItem.Id}` : `${API}/upload`
-      const method = "POST" // Gebruik altijd POST, ongeacht edit of create
+      const url = isEdit ? `${API}/items/${editItem.Id}` : `${API}/upload`
+      const method = "POST"
 
-      const res = await fetch(url, { 
-          method, 
-          headers: { Authorization: `Bearer ${token}` }, 
-          body: data 
+      const res = await fetch(url, {
+        method,
+        headers: { Authorization: `Bearer ${token}` },
+        body: data
       })
+
       const payload = await res.json().catch(() => ({}))
+
       if (res.status === 401) throw new Error("Sessie verlopen.")
+      if (res.status === 409) throw new Error(payload.error || "Deze framepositie is al bezet.")
       if (!res.ok) throw new Error(payload.error || "Opslaan mislukt.")
 
       addLog?.(`${isEdit ? "Bijgewerkt" : "Toegevoegd"}: ${naam}`, "success")
+
       if (isEdit) {
         onSaved?.({
-          ...editItem, Naam: naam, Type: type, Auteur: auteur, Beschrijving: beschrijving,
-          FramePlaatsId: frameless ? null : framePlaatsId, Frameless: frameless ? 1 : 0
+          ...editItem,
+          Naam: naam,
+          Type: type,
+          Auteur: auteur,
+          Beschrijving: beschrijving,
+          FramePlaatsId: frameless ? null : framePlaatsId,
+          Frameless: frameless ? 1 : 0,
+          ImageUrl: imageFile ? imagePreview : editItem?.ImageUrl,
+          Audiopath: audioFile ? audioName : editItem?.Audiopath,
         })
       } else {
         setSubmitted(true)
@@ -347,16 +407,19 @@ export default function UploadView({ token, addLog, item: editItem, onSaved, onC
             <p className="font-body text-[13px] text-muted leading-relaxed">
               <span className="text-ink font-medium">"{naam}"</span> is klaar voor verwerking
               {!frameless && selectedFrame && (
-                <> en wordt opgehangen in{" "}
+                <>
+                  {" "}en wordt opgehangen in{" "}
                   <span className="text-ink font-medium">
-                    {selectedKamer?.Naam} — {selectedFrame.Naam ?? `Frame #${selectedFrame.Id}`}
+                    {selectedKamer?.Naam} — Positie {selectedFrame.PlaatsNr}
                   </span>
                 </>
               )}.
             </p>
           </div>
-          <button onClick={handleReset}
-            className="mt-1 flex items-center gap-2 px-5 py-2 rounded-md bg-ink text-white font-body text-[13px] font-medium cursor-pointer border-none">
+          <button
+            onClick={handleReset}
+            className="mt-1 flex items-center gap-2 px-5 py-2 rounded-md bg-ink text-white font-body text-[13px] font-medium cursor-pointer border-none"
+          >
             <FiUpload size={13} /> Nieuw werk toevoegen
           </button>
         </div>
@@ -366,9 +429,7 @@ export default function UploadView({ token, addLog, item: editItem, onSaved, onC
 
   return (
     <div className="flex gap-5 h-full min-h-0 max-h-[calc(100vh-116px)]">
-
       <div className="flex flex-col gap-3 w-77.5 shrink-0 min-h-0">
-
         <div
           onClick={() => imageRef.current?.click()}
           onDragOver={e => { e.preventDefault(); setDragOver(true) }}
@@ -399,12 +460,23 @@ export default function UploadView({ token, addLog, item: editItem, onSaved, onC
             </div>
           )}
         </div>
-        <input ref={imageRef} type="file" accept="image/*" className="hidden"
-          onChange={e => readImage(e.target.files?.[0])} />
+
+        <input
+          ref={imageRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={e => readImage(e.target.files?.[0])}
+        />
 
         {imagePreview && imageFile && (
-          <button onClick={() => { setImageFile(null); setImagePreview(isEdit ? (editItem?.ImageUrl ?? null) : null) }}
-            className="flex items-center gap-1 -mt-1.5 font-body text-[11px] text-muted hover:text-red-500 cursor-pointer bg-transparent border-none p-0">
+          <button
+            onClick={() => {
+              setImageFile(null)
+              setImagePreview(isEdit ? (editItem?.ImageUrl ?? null) : null)
+            }}
+            className="flex items-center gap-1 -mt-1.5 font-body text-[11px] text-muted hover:text-red-500 cursor-pointer bg-transparent border-none p-0"
+          >
             <FiX size={11} /> Verwijderen
           </button>
         )}
@@ -421,15 +493,28 @@ export default function UploadView({ token, addLog, item: editItem, onSaved, onC
               : <p className="font-body text-[12px] text-muted">{isEdit ? "Nieuw audio (optioneel)" : "Audio toevoegen (optioneel)"}</p>
             }
           </div>
+
           {audioName && (
-            <button onClick={e => { e.stopPropagation(); setAudioFile(null); setAudioName(isEdit ? (editItem?.Audiopath?.split("/").pop() ?? null) : null) }}
-              className="text-muted hover:text-red-500 bg-transparent border-none cursor-pointer p-0">
+            <button
+              onClick={e => {
+                e.stopPropagation()
+                setAudioFile(null)
+                setAudioName(isEdit ? (editItem?.Audiopath?.split("/").pop() ?? null) : null)
+              }}
+              className="text-muted hover:text-red-500 bg-transparent border-none cursor-pointer p-0"
+            >
               <FiX size={12} />
             </button>
           )}
         </div>
-        <input ref={audioRef} type="file" accept="audio/*" className="hidden"
-          onChange={e => readAudio(e.target.files?.[0])} />
+
+        <input
+          ref={audioRef}
+          type="file"
+          accept="audio/*"
+          className="hidden"
+          onChange={e => readAudio(e.target.files?.[0])}
+        />
 
         <div className="bg-paper border border-border rounded-[10px] p-4 flex flex-col gap-2.5 flex-1 min-h-0">
           <FieldLabel>Type</FieldLabel>
@@ -438,20 +523,32 @@ export default function UploadView({ token, addLog, item: editItem, onSaved, onC
           </select>
 
           <FieldLabel>Naam</FieldLabel>
-          <input value={naam} onChange={e => setNaam(e.target.value)}
-            placeholder="Titel van het werk" className={inputCls} />
+          <input
+            value={naam}
+            onChange={e => setNaam(e.target.value)}
+            placeholder="Titel van het werk"
+            className={inputCls}
+          />
 
           <FieldLabel>Auteur</FieldLabel>
-          <input value={auteur} onChange={e => setAuteur(e.target.value)}
-            placeholder="Naam van de kunstenaar" className={inputCls} />
+          <input
+            value={auteur}
+            onChange={e => setAuteur(e.target.value)}
+            placeholder="Naam van de kunstenaar"
+            className={inputCls}
+          />
 
           <FieldLabel>
             Beschrijving{" "}
             <span className="normal-case tracking-normal font-light text-muted">(optioneel)</span>
           </FieldLabel>
-          <textarea value={beschrijving} onChange={e => setBeschrijving(e.target.value)}
-            placeholder="Korte omschrijving…" rows={2}
-            className={`${inputCls} resize-none`} />
+          <textarea
+            value={beschrijving}
+            onChange={e => setBeschrijving(e.target.value)}
+            placeholder="Korte omschrijving…"
+            rows={2}
+            className={`${inputCls} resize-none`}
+          />
         </div>
 
         {submitError && (
@@ -462,12 +559,18 @@ export default function UploadView({ token, addLog, item: editItem, onSaved, onC
         )}
 
         <div className="flex gap-2 shrink-0">
-          <button onClick={isEdit ? onCancel : handleReset}
-            className="px-4 py-2 rounded-md border border-border bg-paper font-body text-[13px] text-muted hover:text-ink cursor-pointer">
+          <button
+            onClick={isEdit ? onCancel : handleReset}
+            className="px-4 py-2 rounded-md border border-border bg-paper font-body text-[13px] text-muted hover:text-ink cursor-pointer"
+          >
             {isEdit ? "Annuleren" : "Wissen"}
           </button>
-          <button onClick={handleSubmit} disabled={!canSubmit || submitting}
-            className="flex-1 flex items-center justify-center gap-2 py-2 rounded-md bg-ink text-white font-body text-[13px] font-medium border-none cursor-pointer hover:bg-accent disabled:opacity-40 disabled:cursor-not-allowed">
+
+          <button
+            onClick={handleSubmit}
+            disabled={!canSubmit || submitting}
+            className="flex-1 flex items-center justify-center gap-2 py-2 rounded-md bg-ink text-white font-body text-[13px] font-medium border-none cursor-pointer hover:bg-accent disabled:opacity-40 disabled:cursor-not-allowed"
+          >
             {submitting
               ? <><div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Opslaan…</>
               : isEdit
@@ -481,7 +584,6 @@ export default function UploadView({ token, addLog, item: editItem, onSaved, onC
       </div>
 
       <div className="flex flex-col gap-3 flex-1 min-h-0">
-
         {metaError && (
           <div className="flex items-center gap-2 px-3 py-2 bg-red-50 border border-red-200 rounded-lg shrink-0">
             <FiAlertCircle size={13} className="text-red-500 shrink-0" />
@@ -495,11 +597,15 @@ export default function UploadView({ token, addLog, item: editItem, onSaved, onC
               <p className="font-body text-[13px] font-medium text-ink">Geen vaste plaatsing</p>
               <p className="font-body text-[11px] text-muted mt-0.5">Sla op zonder frame te kiezen</p>
             </div>
-            <button onClick={toggleFrameless}
+            <button
+              onClick={toggleFrameless}
               className={`relative w-10 h-5.5 rounded-full border cursor-pointer shrink-0
-        ${frameless ? "bg-ink border-ink" : "bg-warm-bg border-border"}`}>
-              <span className={`absolute top-0.75 w-4 h-4 rounded-full bg-white shadow-sm
-        ${frameless ? "left-[calc(100%-19px)]" : "left-0.75"}`} />
+                ${frameless ? "bg-ink border-ink" : "bg-warm-bg border-border"}`}
+            >
+              <span
+                className={`absolute top-0.75 w-4 h-4 rounded-full bg-white shadow-sm
+                  ${frameless ? "left-[calc(100%-19px)]" : "left-0.75"}`}
+              />
             </button>
           </div>
         </div>
@@ -517,11 +623,14 @@ export default function UploadView({ token, addLog, item: editItem, onSaved, onC
           ) : (
             <div className="flex flex-wrap gap-1.5 shrink-0">
               {kamers.map(k => (
-                <button key={k.KamerId} onClick={() => handleKamerChange(k.KamerId)}
+                <button
+                  key={k.KamerId}
+                  onClick={() => handleKamerChange(k.KamerId)}
                   className={`px-3 py-1.5 rounded-md border font-body text-[12px] font-medium cursor-pointer
                     ${kamerId === k.KamerId
                       ? "bg-ink text-white border-ink"
-                      : "bg-warm-bg text-muted border-border hover:border-accent hover:text-ink"}`}>
+                      : "bg-warm-bg text-muted border-border hover:border-accent hover:text-ink"}`}
+                >
                   {k.Naam}
                 </button>
               ))}
@@ -543,18 +652,28 @@ export default function UploadView({ token, addLog, item: editItem, onSaved, onC
                 selected={framePlaatsId}
                 onSelect={setFramePlaatsId}
                 artImg={imagePreview}
+                occupiedFrameIds={occupiedFrameIds}
               />
             </>
           )}
 
-          {framePlaatsId && !frameless && (
+          {selectedFrameOccupied && !frameless && (
+            <div className="flex items-center gap-2 px-3 py-2 bg-red-50 border border-red-200 rounded-lg shrink-0">
+              <FiAlertCircle size={12} className="text-red-500 shrink-0" />
+              <p className="font-body text-[11px] text-red-600">
+                Deze framepositie is al bezet door een ander kunstwerk.
+              </p>
+            </div>
+          )}
+
+          {framePlaatsId && !frameless && !selectedFrameOccupied && (
             <div className="flex items-center gap-2 px-3 py-2 bg-warm-bg rounded-lg border border-border shrink-0 mt-auto">
               <FiCheck size={11} className="text-ink shrink-0" />
               <p className="font-body text-[11px] text-muted">
                 <span className="text-ink font-medium">{selectedKamer?.Naam}</span>
                 {" · "}
                 <span className="text-ink font-medium">
-                  {selectedFrame?.Naam ?? selectedFrame?.Positie ?? `Frame #${framePlaatsId}`}
+                  Positie {selectedFrame?.PlaatsNr ?? framePlaatsId}
                 </span>
               </p>
             </div>

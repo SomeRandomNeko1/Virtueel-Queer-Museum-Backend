@@ -352,6 +352,7 @@ function HomeView({ items, loading, err, types, typeFilter, setTypeFilter, picke
             item={picked}
             onSaved={(updated) => { onItemSaved(updated); setPicked(null) }}
             onCancel={() => setPicked(null)}
+            items={items}
           />
         </div>
       )}

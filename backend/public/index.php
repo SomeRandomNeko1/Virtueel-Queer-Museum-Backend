@@ -136,85 +136,226 @@ if ($route === 'uploads' && ($UPLOADS_PUBLIC ?? '1') === '1') {
     serveUploadedFile($url[1] ?? '');
 }
 
+$method = $_SERVER['REQUEST_METHOD'];
+
 // ---- AUTH ----
+
+if ($route === 'users' && $method === 'POST') {
+    require_once dirname(__DIR__) . "/src/connection.php";
+
+    // Check of er al users zijn
+    $check = $conn->query("SELECT COUNT(*) as cnt FROM `Users`");
+    $row   = $check->fetch_assoc();
+    $hasUsers = (int)$row['cnt'] > 0;
+
+    // Als er al users zijn, moet er een geldig token zijn
+    if ($hasUsers) {
+        $token = getBearerToken();
+        $tokenParts = explode(".", $token);
+        if (count($tokenParts) !== 3) {
+            http_response_code(401);
+            echo json_encode(['error' => 'Token vereist om gebruikers toe te voegen']);
+            exit;
+        }
+
+        $decodedHeader  = json_decode(base64UrlDecode($tokenParts[0]) ?: '', true);
+        $decodedPayload = json_decode(base64UrlDecode($tokenParts[1]) ?: '', true);
+        $tokenKey = $tokenParts[2];
+
+        if (!is_array($decodedHeader)  || ($decodedHeader['alg'] ?? '') !== 'HS256'
+         || !is_array($decodedPayload)
+         || empty($decodedPayload['sub'])
+         || !isset($decodedPayload['exp']) || !is_numeric($decodedPayload['exp'])
+         || time() >= (int) $decodedPayload['exp']
+        ) {
+            http_response_code(401);
+            echo json_encode(['error' => 'token expired']);
+            exit;
+        }
+
+        $signature = hash_hmac('sha256', "$tokenParts[0].$tokenParts[1]", $JWT_SECRET, true);
+        if (!hash_equals(base64UrlEncode($signature), $tokenKey)) {
+            http_response_code(401);
+            echo json_encode(['error' => 'invalid token']);
+            exit;
+        }
+    }
+
+    $data     = readJsonBody();
+    $username = trim((string) ($data['username'] ?? ''));
+    $password = (string) ($data['password'] ?? '');
+
+    if ($username === '' || $password === '') {
+        http_response_code(400);
+        echo json_encode(['error' => 'username en password zijn verplicht']);
+        exit;
+    }
+    if (mb_strlen($username) < 3 || mb_strlen($username) > 100) {
+        http_response_code(400);
+        echo json_encode(['error' => 'username moet tussen 3 en 100 tekens zijn']);
+        exit;
+    }
+    if (mb_strlen($password) < 8) {
+        http_response_code(400);
+        echo json_encode(['error' => 'wachtwoord moet minimaal 8 tekens zijn']);
+        exit;
+    }
+
+    $hash = password_hash($password, PASSWORD_BCRYPT, ['cost' => 12]);
+
+    $stmt = $conn->prepare("INSERT INTO `Users` (`Username`, `PasswordHash`) VALUES (?, ?)");
+    if (!$stmt) {
+        http_response_code(500);
+        echo json_encode(['error' => 'database fout']);
+        exit;
+    }
+
+    $stmt->bind_param("ss", $username, $hash);
+    $ok       = $stmt->execute();
+    $insertId = $stmt->insert_id;
+    $errNo    = $conn->errno;
+    $stmt->close();
+
+    if (!$ok) {
+        if ($errNo === 1062) {
+            http_response_code(409);
+            echo json_encode(['error' => 'Deze username bestaat al']);
+        } else {
+            http_response_code(500);
+            echo json_encode(['error' => 'kon gebruiker niet aanmaken']);
+        }
+        exit;
+    }
+
+    http_response_code(201);
+    echo json_encode([
+        'message'  => 'Gebruiker aangemaakt',
+        'id'       => $insertId,
+        'username' => $username,
+    ]);
+    exit;
+}
+
 if ($route === "auth") {
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
         http_response_code(405);
         echo json_encode(['error' => 'method not allowed']);
         exit;
     }
-    $data = readJsonBody();
-    $username = $data['username'] ?? '';
-    $password = $data['password'] ?? '';
-    $authenticated = false;
-    if (!empty($AUTH_PASSWORD_HASH)) {
-        if (hash_equals($AUTH_USERNAME, $username) && password_verify($password, $AUTH_PASSWORD_HASH)) {
-            $authenticated = true;
-        }
-    } else {
-        if (hash_equals($AUTH_USERNAME, $username) && hash_equals($AUTH_PASSWORD, $password)) {
-            $authenticated = true;
-        }
-    }
-    if ($authenticated) {
-        $header  = ['alg' => 'HS256', 'typ' => 'JWT'];
-        $payload = ['sub' => $AUTH_USERNAME, 'iat' => time(), 'exp' => time() + 3600];
-        $headerEncoded  = base64UrlEncode(json_encode($header,  JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
-        $payloadEncoded = base64UrlEncode(json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
-        $signature      = hash_hmac('sha256', "$headerEncoded.$payloadEncoded", $JWT_SECRET, true);
-        $jwt = "$headerEncoded.$payloadEncoded." . base64UrlEncode($signature);
-        echo json_encode(['token' => $jwt]);
+
+    $data     = readJsonBody();
+    $username = trim((string) ($data['username'] ?? ''));
+    $password = (string) ($data['password'] ?? '');
+
+    if ($username === '' || $password === '') {
+        http_response_code(400);
+        echo json_encode(['error' => 'username en password zijn verplicht']);
         exit;
     }
-    http_response_code(401);
-    echo json_encode(['error' => 'Invalid credentials']);
+
+    require_once dirname(__DIR__) . "/src/connection.php";
+
+    $stmt = $conn->prepare("SELECT `UserId`, `Username`, `PasswordHash` FROM `Users` WHERE `Username` = ? LIMIT 1");
+    if (!$stmt) {
+        http_response_code(500);
+        echo json_encode(['error' => 'database fout']);
+        exit;
+    }
+
+    $stmt->bind_param("s", $username);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $user   = $result->fetch_assoc();
+    $stmt->close();
+
+    if (!$user || !password_verify($password, $user['PasswordHash'])) {
+        http_response_code(401);
+        echo json_encode(['error' => 'Invalid credentials']);
+        exit;
+    }
+
+    // JWT aanmaken
+    $header  = ['alg' => 'HS256', 'typ' => 'JWT'];
+    $payload = [
+        'sub' => $user['Username'],
+        'uid' => $user['UserId'],
+        'iat' => time(),
+        'exp' => time() + 3600,
+    ];
+
+    $headerEncoded  = base64UrlEncode(json_encode($header,  JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+    $payloadEncoded = base64UrlEncode(json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+    $signature      = hash_hmac('sha256', "$headerEncoded.$payloadEncoded", $JWT_SECRET, true);
+    $jwt = "$headerEncoded.$payloadEncoded." . base64UrlEncode($signature);
+
+    echo json_encode([
+        'token'    => $jwt,
+        'username' => $user['Username'],
+    ]);
     exit;
-}
-
-$method = $_SERVER['REQUEST_METHOD'];
-
-// Methode-check: sta GET, POST (upload), PATCH, DELETE toe
-if ($method !== 'GET'
-    && !($method === 'POST' && ($route === 'upload' || $route === 'items')) 
-    && $method !== 'PATCH'
-    && $method !== 'DELETE'
-) {
-    http_response_code(405);
-    echo json_encode(['error' => 'method not allowed']);
-    exit;
-}
-
-// Token verplicht voor alles behalve GET
-if ($method !== 'GET') {
-    $token = getBearerToken();
-    $tokenParts = explode(".", $token);
-    if (count($tokenParts) !== 3) {
-        http_response_code(401);
-        echo json_encode(['error' => 'no token']);
-        exit;
-    }
-    $decodedHeader  = json_decode(base64UrlDecode($tokenParts[0]) ?: '', true);
-    $decodedPayload = json_decode(base64UrlDecode($tokenParts[1]) ?: '', true);
-    $tokenKey = $tokenParts[2];
-
-    if (!is_array($decodedHeader)  || ($decodedHeader['alg']  ?? '') !== 'HS256'
-     || !is_array($decodedPayload) || ($decodedPayload['sub'] ?? '') !== $AUTH_USERNAME
-     || !isset($decodedPayload['exp']) || !is_numeric($decodedPayload['exp'])
-     || time() >= (int) $decodedPayload['exp']
-    ) {
-        http_response_code(401);
-        echo json_encode(['error' => 'token expired']);
-        exit;
-    }
-    $signature = hash_hmac('sha256', "$tokenParts[0].$tokenParts[1]", $JWT_SECRET, true);
-    if (!hash_equals(base64UrlEncode($signature), $tokenKey)) {
-        http_response_code(401);
-        echo json_encode(['error' => 'no token']);
-        exit;
-    }
 }
 
 require_once dirname(__DIR__) . "/src/connection.php";
+
+// ---- USERS LIST (GET /users) ----
+if ($route === 'users' && $method === 'GET') {
+    $stmt = $conn->prepare("SELECT `UserId`, `Username`, `CreatedAt` FROM `Users` ORDER BY `UserId`");
+    $stmt->execute();
+    echo json_encode($stmt->get_result()->fetch_all(MYSQLI_ASSOC));
+    $stmt->close();
+    exit;
+}
+
+// ---- DELETE USER (DELETE /users/{id}) ----
+if ($route === 'users' && $method === 'DELETE' && isset($url[1]) && ctype_digit(trim($url[1]))) {
+    $deleteId = (int) $url[1];
+
+    // Voorkom dat je de laatste gebruiker verwijdert
+    $countStmt = $conn->query("SELECT COUNT(*) as cnt FROM `Users`");
+    $countRow  = $countStmt->fetch_assoc();
+    if ((int)$countRow['cnt'] <= 1) {
+        http_response_code(400);
+        echo json_encode(['error' => 'Kan de laatste gebruiker niet verwijderen']);
+        exit;
+    }
+
+    // Voorkom dat je jezelf verwijdert
+    $selfStmt = $conn->prepare("SELECT `Username` FROM `Users` WHERE `UserId` = ? LIMIT 1");
+    $selfStmt->bind_param("i", $deleteId);
+    $selfStmt->execute();
+    $targetUser = $selfStmt->get_result()->fetch_assoc();
+    $selfStmt->close();
+
+    if (!$targetUser) {
+        http_response_code(404);
+        echo json_encode(['error' => 'Gebruiker niet gevonden']);
+        exit;
+    }
+
+    if ($targetUser['Username'] === $authedUsername) {
+        http_response_code(400);
+        echo json_encode(['error' => 'Je kunt jezelf niet verwijderen']);
+        exit;
+    }
+
+    $stmt = $conn->prepare("DELETE FROM `Users` WHERE `UserId` = ?");
+    $stmt->bind_param("i", $deleteId);
+    $ok       = $stmt->execute();
+    $affected = $stmt->affected_rows;
+    $stmt->close();
+
+    if (!$ok || $affected === 0) {
+        http_response_code(500);
+        echo json_encode(['error' => 'verwijderen mislukt']);
+        exit;
+    }
+
+    echo json_encode([
+        'deleted'  => $deleteId,
+        'username' => $targetUser['Username'],
+    ]);
+    exit;
+}
 
 // Private uploads na token-check
 if ($route === 'uploads' && ($UPLOADS_PUBLIC ?? '1') === '0') {
@@ -324,6 +465,20 @@ if ($route === 'upload' && $method === 'POST') {
         $finalAudioPath = $audioPath;
     }
 
+    if (!$frameless && $framePlaatsId !== null) {
+        $checkStmt = $conn->prepare("SELECT `Id` FROM `Kunstwerken` WHERE `FramePlaatsId` = ? LIMIT 1");
+        $checkStmt->bind_param("i", $framePlaatsId);
+        $checkStmt->execute();
+        $checkStmt->store_result();
+        if ($checkStmt->num_rows > 0) {
+            $checkStmt->close();
+            http_response_code(409);
+            echo json_encode(['error' => 'Deze framepositie is al bezet door een ander kunstwerk']);
+            exit;
+        }
+        $checkStmt->close();
+    }
+
     $stmt = $conn->prepare("INSERT INTO `Kunstwerken` (`Type`, `Naam`, `Beschrijving`, `FramePlaatsId`, `ImageUrl`, `Audiopath`, `Auteur`, `Frameless`) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
     if (!$stmt) {
         uploadDebug('database prepare failed', ['dbError' => $conn->error]);
@@ -410,6 +565,21 @@ if (($method === 'POST' || $method === 'PATCH') && $route === 'items' && isset($
         if (!move_uploaded_file($audioFile['tmp_name'], $uploadDir . '/' . $safeAudioName)) { http_response_code(500); echo json_encode(['error' => 'kon audiobestand niet opslaan']); exit; }
         $newAudioPath  = $UPLOAD_BASE_URL . '/uploads/' . $safeAudioName;
     }
+
+    if (!$frameless && $framePlaatsId !== null) {
+        $checkStmt = $conn->prepare("SELECT `Id` FROM `Kunstwerken` WHERE `FramePlaatsId` = ? AND `Id` != ? LIMIT 1");
+        $checkStmt->bind_param("ii", $framePlaatsId, $id);
+        $checkStmt->execute();
+        $checkStmt->store_result();
+        if ($checkStmt->num_rows > 0) {
+            $checkStmt->close();
+            http_response_code(409);
+            echo json_encode(['error' => 'Deze framepositie is al bezet door een ander kunstwerk']);
+            exit;
+        }
+        $checkStmt->close();
+    }
+
 
     // Bouw UPDATE query dynamisch op
     $sets   = ["`Naam`=?", "`Type`=?", "`Beschrijving`=?", "`Auteur`=?", "`FramePlaatsId`=?", "`Frameless`=?"];
