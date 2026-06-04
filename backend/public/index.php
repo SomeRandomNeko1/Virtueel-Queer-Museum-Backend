@@ -120,7 +120,6 @@ function serveUploadedFile(string $fileName): void
     exit;
 }
 
-// ── HELPERS die pas later gedefinieerd kunnen worden ──────────────────────────
 // PHP hoists function definitions, dus we kunnen ze hier bovenaan zetten.
 
 function cleanupOldLogs(mysqli $conn): void {
@@ -891,26 +890,57 @@ if ($route === 'upload' && $method === 'POST') {
         $checkStmt->close();
     }
 
-    $stmt = $conn->prepare("INSERT INTO `Kunstwerken` (`Type`, `Naam`, `Beschrijving`, `FramePlaatsId`, `ImageUrl`, `Audiopath`, `Auteur`, `Frameless`) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
-    if (!$stmt) {
-        uploadDebug('database prepare failed', ['dbError' => $conn->error]);
-        if ($hasImageFile) @unlink($targetPath);
-        if ($hasAudioFile) @unlink($targetAudioPath);
-        http_response_code(500); echo json_encode(['error' => 'database prepare failed']); exit;
+    if ($framePlaatsId === null) {
+        $stmt = $conn->prepare(
+            "INSERT INTO `Kunstwerken` (`Type`, `Naam`, `Beschrijving`, `FramePlaatsId`, `ImageUrl`, `Audiopath`, `Auteur`, `Frameless`)
+            VALUES (?, ?, ?, NULL, ?, ?, ?, ?)"
+        );
+        if (!$stmt) {
+            uploadDebug('database prepare failed', ['dbError' => $conn->error]);
+            if ($hasImageFile) @unlink($targetPath);
+            if ($hasAudioFile) @unlink($targetAudioPath);
+            http_response_code(500);
+            echo json_encode(['error' => 'database prepare failed']);
+            exit;
+        }
+        $stmt->bind_param("ssssssi",
+            $type,
+            $naam,
+            $beschrijving,
+            $finalImageUrl,
+            $finalAudioPath,
+            $auteur,
+            $frameless
+        );
+    } else {
+        $stmt = $conn->prepare(
+            "INSERT INTO `Kunstwerken` (`Type`, `Naam`, `Beschrijving`, `FramePlaatsId`, `ImageUrl`, `Audiopath`, `Auteur`, `Frameless`)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+        );
+        if (!$stmt) {
+            uploadDebug('database prepare failed', ['dbError' => $conn->error]);
+            if ($hasImageFile) @unlink($targetPath);
+            if ($hasAudioFile) @unlink($targetAudioPath);
+            http_response_code(500);
+            echo json_encode(['error' => 'database prepare failed']);
+            exit;
+        }
+        $stmt->bind_param("sssisssi",
+            $type,
+            $naam,
+            $beschrijving,
+            $framePlaatsId,
+            $finalImageUrl,
+            $finalAudioPath,
+            $auteur,
+            $frameless
+        );
     }
-    $stmt->bind_param("sssisssi", $type, $naam, $beschrijving, $framePlaatsId, $finalImageUrl, $finalAudioPath, $auteur, $frameless);
+
     $ok        = $stmt->execute();
     $newId     = $stmt->insert_id;
     $stmtError = $stmt->error;
     $stmt->close();
-
-    if (!$ok) {
-        uploadDebug('database insert failed', ['stmtError' => $stmtError]);
-        if ($hasImageFile) @unlink($targetPath);
-        if ($hasAudioFile) @unlink($targetAudioPath);
-        http_response_code(500); echo json_encode(['error' => 'database insert failed']); exit;
-    }
-
     addLogEntry($conn, "Kunstwerk toegevoegd: {$naam} (ID: {$newId})", 'success', $authedUsername);
 
     http_response_code(201);
@@ -993,9 +1023,16 @@ if (($method === 'POST' || $method === 'PATCH') && $route === 'items' && isset($
         $checkStmt->close();
     }
 
-    $sets   = ["`Naam`=?", "`Type`=?", "`Beschrijving`=?", "`Auteur`=?", "`FramePlaatsId`=?", "`Frameless`=?"];
-    $params = [$naam, $type, $beschrijving, $auteur, $framePlaatsId, $frameless];
-    $types  = "ssssii";
+    if ($framePlaatsId === null) {
+        // Gebruik NULL direct in de query voor dit veld
+        $sets   = ["`Naam`=?", "`Type`=?", "`Beschrijving`=?", "`Auteur`=?", "`FramePlaatsId`=NULL", "`Frameless`=?"];
+        $params = [$naam, $type, $beschrijving, $auteur, $frameless];
+        $types  = "ssssi";
+    } else {
+        $sets   = ["`Naam`=?", "`Type`=?", "`Beschrijving`=?", "`Auteur`=?", "`FramePlaatsId`=?", "`Frameless`=?"];
+        $params = [$naam, $type, $beschrijving, $auteur, $framePlaatsId, $frameless];
+        $types  = "ssssii";
+    }
 
     if ($newImageUrl  !== null) { $sets[] = "`ImageUrl`=?";  $params[] = $newImageUrl;  $types .= "s"; }
     if ($newAudioPath !== null) { $sets[] = "`Audiopath`=?"; $params[] = $newAudioPath; $types .= "s"; }

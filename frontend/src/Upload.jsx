@@ -285,7 +285,7 @@ export default function UploadView({ token, addLog, item: editItem, onSaved, onC
     naam.trim() &&
     type &&
     (isEdit || imageFile) &&
-    (frameless || framePlaatsId) &&
+    (frameless || framePlaatsId != null) &&
     !selectedFrameOccupied
   )
 
@@ -304,9 +304,12 @@ export default function UploadView({ token, addLog, item: editItem, onSaved, onC
   }
 
   const toggleFrameless = () => {
-    setFrameless(p => {
-      if (!p) setFramePlaatsId(null)
-      return !p
+    setFrameless(prev => {
+      const next = !prev
+      if (next) {
+        setFramePlaatsId(null)
+      }
+      return next
     })
   }
 
@@ -350,8 +353,9 @@ export default function UploadView({ token, addLog, item: editItem, onSaved, onC
       data.append("auteur", auteur)
       data.append("beschrijving", beschrijving)
       data.append("frameless", frameless ? "1" : "0")
-
-      if (!frameless && framePlaatsId) data.append("framePlaatsId", String(framePlaatsId))
+      if (!frameless && framePlaatsId != null) {
+        data.append("framePlaatsId", String(framePlaatsId))
+      }
       if (imageFile) data.append("afbeelding", imageFile)
       if (audioFile) data.append("audio", audioFile)
 
@@ -577,7 +581,13 @@ export default function UploadView({ token, addLog, item: editItem, onSaved, onC
                 ? <><FiEdit2 size={13} /> Bijwerken</>
                 : canSubmit
                   ? <><FiUpload size={13} /> Opslaan</>
-                  : "Vul alle velden in"
+                  : !naam.trim()
+                    ? "Vul een naam in"
+                    : !imageFile && !isEdit
+                      ? "Voeg een afbeelding toe"
+                      : !frameless && !framePlaatsId
+                        ? "Kies een frame of geen plaatsing"
+                        : "Vul alle velden in"
             }
           </button>
         </div>
@@ -599,12 +609,12 @@ export default function UploadView({ token, addLog, item: editItem, onSaved, onC
             </div>
             <button
               onClick={toggleFrameless}
-              className={`relative w-10 h-5.5 rounded-full border cursor-pointer shrink-0
-                ${frameless ? "bg-ink border-ink" : "bg-warm-bg border-border"}`}
+              className={`relative w-10 h-6 rounded-full border-none cursor-pointer shrink-0 transition-colors duration-200
+                ${frameless ? "bg-ink" : "bg-border"}`}
             >
               <span
-                className={`absolute top-0.75 w-4 h-4 rounded-full bg-white shadow-sm
-                  ${frameless ? "left-[calc(100%-19px)]" : "left-0.75"}`}
+                className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow-sm transition-all duration-200
+                  ${frameless ? "left-5" : "left-1"}`}
               />
             </button>
           </div>
