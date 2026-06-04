@@ -57,13 +57,18 @@ export default function App({ token, onLogout, addLog }) {
     return () => clearTimeout(logoutTimerRef.current)
   }, [token, onLogout, addLog])
 
+  //  username 
+  const payload = decodeToken(token)
+  const username = payload?.name || payload?.username || payload?.sub || "?"
+  const initials = username.slice(0, 1).toUpperCase()
+
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState(null)
   const [q, setQ] = useState("")
   const [typeFilter, setTypeFilter] = useState(null)
   const [page, setPage] = useState("home")
-  const [picked, setPicked] = useState(null)   // item open in edit panel
+  const [picked, setPicked] = useState(null)
   const [showMenu, setShowMenu] = useState(false)
   const menuRef = useRef(null)
 
@@ -108,8 +113,8 @@ export default function App({ token, onLogout, addLog }) {
 
   const handleItemDeleted = useCallback((id) => {
     setItems(prev => prev.filter(it => it.Id !== id))
-    setPicked(null)           // panel sluiten
-  }, [])                      // setPicked zit in App-scope, dus geen dep nodig
+    setPicked(null)
+  }, [])
 
   return (
     <div className="flex min-h-screen">
@@ -176,7 +181,7 @@ export default function App({ token, onLogout, addLog }) {
                 className="flex items-center gap-1.5 border border-border rounded-[20px] py-1 pr-2.25 pl-1 cursor-pointer text-muted text-[13px] hover:bg-warm-bg transition-colors duration-120 bg-transparent"
               >
                 <div className="w-6.5 h-6.5 bg-ink text-white rounded-full text-[11px] font-medium flex items-center justify-center font-display">
-                  O
+                  {initials}
                 </div>
                 <FiChevronDown
                   size={12}
@@ -194,18 +199,16 @@ export default function App({ token, onLogout, addLog }) {
                 >
                   <div className="px-3.5 py-3 border-b border-border">
                     <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 bg-ink text-white rounded-full text-[12px] font-medium flex items-center justify-center font-display shrink-0">O</div>
+                      <div className="w-8 h-8 bg-ink text-white rounded-full text-[12px] font-medium flex items-center justify-center font-display shrink-0">
+                        {initials}
+                      </div>
                       <div className="min-w-0">
-                        <p className="font-display text-[13px] font-semibold text-ink leading-tight truncate">Admin</p>
+                        <p className="font-display text-[13px] font-semibold text-ink leading-tight truncate">{username}</p>
                         <p className="font-body text-[11px] text-muted truncate">Beheerder</p>
                       </div>
                     </div>
                   </div>
                   <div className="p-1">
-                    <button className="flex items-center gap-2.5 w-full px-3 py-2 rounded-md bg-transparent border-none cursor-pointer font-body text-[13px] text-muted hover:bg-warm-bg hover:text-ink transition-colors duration-120 text-left">
-                      <FiUser size={13} /><span>Profiel</span>
-                    </button>
-                    <div className="my-1 border-t border-border" />
                     <button
                       onClick={() => { setShowMenu(false); onLogout?.() }}
                       className="flex items-center gap-2.5 w-full px-3 py-2 rounded-md bg-transparent border-none cursor-pointer font-body text-[13px] text-red-500 hover:bg-red-50 transition-colors duration-120 text-left"
@@ -228,7 +231,7 @@ export default function App({ token, onLogout, addLog }) {
               isMobile={isMobile}
               token={token} addLog={addLog}
               onItemSaved={handleItemSaved}
-              onItemDeleted={handleItemDeleted}   // ← nieuw
+              onItemDeleted={handleItemDeleted}
             />
           )}
 
@@ -329,7 +332,6 @@ function HomeView({ items, loading, err, types, typeFilter, setTypeFilter, picke
 
       {picked && (
         <div className="w-full md:w-170 shrink-0 flex flex-col min-h-0">
-          {/* Panel header */}
           <div className="flex items-center justify-between mb-3 shrink-0">
             <div className="flex items-center gap-2 text-muted">
               <FiEdit2 size={13} />
@@ -346,7 +348,7 @@ function HomeView({ items, loading, err, types, typeFilter, setTypeFilter, picke
                 <FiX size={13} />
               </button>
             </div>
-        </div>
+          </div>
 
           <UploadView
             key={picked.Id}
