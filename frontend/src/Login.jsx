@@ -36,7 +36,7 @@ export default function Login({ onLogin, addLog }) {
     <div className="min-h-screen flex">
 
       <div
-        className="hidden md:flex w-[42%] flex-col justify-between px-12 py-12"
+        className="hidden md:flex w-[42%] items-center justify-center overflow-hidden"
         style={{
           backgroundColor: "var(--color-ink)",
           backgroundImage:
@@ -44,17 +44,29 @@ export default function Login({ onLogin, addLog }) {
             "radial-gradient(ellipse at 100% 100%, rgba(255,255,255,.04) 0%, transparent 50%)",
         }}
       >
-        <span className="font-display text-[22px] font-semibold text-white tracking-[.01em]">
-          Kunstwerk
-        </span>
+        <img
+          src="/Media/Logo.png"
+          alt="Kunstwerk logo"
+          style={{
+            width: "90%",
+            height: "auto",
+            objectFit: "contain",
+            mixBlendMode: "screen",
+          }}
+        />
       </div>
 
       <div className="flex-1 flex items-center justify-center bg-warm-bg px-6">
         <div className="w-full max-w-90">
 
-          <p className="md:hidden font-display text-[20px] font-semibold text-ink mb-8 tracking-[.01em]">
-            Kunstwerk
-          </p>
+          {/* Mobile logo */}
+          <div className="md:hidden mb-8 flex justify-center">
+            <img
+              src="/Media/Logo.png"
+              alt="Kunstwerk logo"
+              style={{ width: "60%", objectFit: "contain" }}
+            />
+          </div>
 
           <h1 className="font-display text-[26px] font-semibold text-ink mb-1 tracking-[.005em]">
             Welkom terug
